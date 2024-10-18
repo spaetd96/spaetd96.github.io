@@ -3,7 +3,7 @@ title: Autocorrelation—A Simple Diagnostic for Tropical Precipitation Variabil
   in Global Kilometer‐Scale Climate Models
 authors:
 - Dorian Spät
-date: -01-01
+date: '2024-08-28'
 publishDate: '2024-10-18T13:41:00.497246Z'
 publication_types:
 - article-journal
