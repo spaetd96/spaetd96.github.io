@@ -65,22 +65,22 @@ work:
   company_name: University of Vienna, Aerosol Physics and Environmental Physics
   company_url: ''
   company_logo: ''
-  date_start: '2021-03'
-  date_end: ''
+  date_start: '2021'
+  date_end: '2021'
 
 - position: Internship
   company_name: Acoustic Research Institute (ARI), Vienna
   company_url: ''
   company_logo: ''
   date_start: '2020'
-  date_end: ''
+  date_end: '2020'
 
 - position: Undergraduate Research Assistant
   company_name: University of Vienna, Aerosol Physics and Environmental Physics
   company_url: ''
   company_logo: ''
   date_start: '2019'
-  date_end: ''
+  date_end: '2019'
 
 
 # Skills
