@@ -62,25 +62,25 @@ education:
 
 work:
 - position: Praedoc Researcher
-    company_name: University of Vienna, Aerosol Physics and Environmental Physics
-    company_url: ''
-    company_logo: ''
-    date_start: 2021-03
-    date_end: ''
+  company_name: University of Vienna, Aerosol Physics and Environmental Physics
+  company_url: ''
+  company_logo: ''
+  date_start: 2021-03
+  date_end: ''
 
 - position: Internship
-    company_name: Acoustic Research Institute (ARI), Vienna
-    company_url: ''
-    company_logo: ''
-    date_start: 2020
-    date_end: ''
+  company_name: Acoustic Research Institute (ARI), Vienna
+  company_url: ''
+  company_logo: ''
+  date_start: 2020
+  date_end: ''
 
 - position: Undergraduate Research Assistant
-    company_name: University of Vienna, Aerosol Physics and Environmental Physics
-    company_url: ''
-    company_logo: ''
-    date_start: 2019
-    date_end: ''
+  company_name: University of Vienna, Aerosol Physics and Environmental Physics
+  company_url: ''
+  company_logo: ''
+  date_start: 2019
+  date_end: ''
 
 
 # Skills
