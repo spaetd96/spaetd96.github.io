@@ -52,35 +52,35 @@ interests:
 education:
   - area: MSc Physics
     institution: University of Vienna
-    date_start: '2018-10'
-    date_end: '2020-12'
+    date_start: 2018-10-01
+    date_end: 2020-12-20
 
   - area: BSc Physics
     institution: University of Vienna
-    date_start: '2015-03'
-    date_end: '2018-06'
+    date_start: 2015-03-01
+    date_end: 2018-06-01
 
 work:
 - position: Praedoc Researcher
   company_name: University of Vienna, Aerosol Physics and Environmental Physics
   company_url: ''
   company_logo: ''
-  date_start: '2021'
-  date_end: '2021'
+  date_start: 2021-03-01
+  date_end: 2021-03-31
 
 - position: Internship
   company_name: Acoustic Research Institute (ARI), Vienna
   company_url: ''
   company_logo: ''
-  date_start: '2020'
-  date_end: '2020'
+  date_start: 2020-08-01
+  date_end: 2020-09-30
 
 - position: Undergraduate Research Assistant
   company_name: University of Vienna, Aerosol Physics and Environmental Physics
   company_url: ''
   company_logo: ''
-  date_start: '2019'
-  date_end: '2019'
+  date_start: 2020-02-01
+  date_end: 2020-07-31
 
 
 # Skills
@@ -123,8 +123,10 @@ languages:
 #   Begin multi-line `summary` with YAML's `|` or `|2-` multi-line prefix and indent 2 spaces below.
 awards:
   - title: Performance scholarship ’Leistungsstipendium’.
-    url: https://www.coursera.org/learn/neural-networks-deep-learning
-    date: '2019, 2021'
+    date: '2019-10-01'
+    awarder: University of Vienna
+  - title: Performance scholarship ’Leistungsstipendium’.
+    date: '2021-10-01'
     awarder: University of Vienna
     
 ---
