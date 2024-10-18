@@ -52,34 +52,34 @@ interests:
 education:
   - area: MSc Physics
     institution: University of Vienna
-    date_start: 2018-10
-    date_end: 2020-12
+    date_start: '2018-10'
+    date_end: '2020-12'
 
   - area: BSc Physics
     institution: University of Vienna
-    date_start: 2015-03
-    date_end: 2018-06
+    date_start: '2015-03'
+    date_end: '2018-06'
 
 work:
 - position: Praedoc Researcher
   company_name: University of Vienna, Aerosol Physics and Environmental Physics
   company_url: ''
   company_logo: ''
-  date_start: 2021-03
+  date_start: '2021-03'
   date_end: ''
 
 - position: Internship
   company_name: Acoustic Research Institute (ARI), Vienna
   company_url: ''
   company_logo: ''
-  date_start: 2020
+  date_start: '2020'
   date_end: ''
 
 - position: Undergraduate Research Assistant
   company_name: University of Vienna, Aerosol Physics and Environmental Physics
   company_url: ''
   company_logo: ''
-  date_start: 2019
+  date_start: '2019'
   date_end: ''
 
 
