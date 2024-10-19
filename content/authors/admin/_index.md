@@ -46,19 +46,19 @@ profiles:
 
 interests:
   - Tropical Dynamics and Precipitation
-  - Convectively coupled equatorial waves
+  - Equatorial waves
   - West African monsoon
 
 education:
   - area: MSc Physics
     institution: University of Vienna
     date_start: 2018-10-01
-    date_end: 2020-12-20
+    date_end: 2020-12-21
 
   - area: BSc Physics
     institution: University of Vienna
     date_start: 2015-03-01
-    date_end: 2018-06-01
+    date_end: 2018-06-29
 
 work:
 - position: Praedoc Researcher
