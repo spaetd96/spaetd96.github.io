@@ -87,7 +87,7 @@ work:
   date_start: 2021-03-01
   date_end: 2021-03-31
 
-- position: Research Internship
+- position: Research Intern
   company_name: Acoustic Research Institute (ARI), Vienna
   company_url: ''
   company_logo: ''
@@ -152,4 +152,4 @@ awards:
 
 ## About Me
 
-I am a PhD student and praedoc university assistant in the <a href="https://klimadynamik.univie.ac.at/"> Climate Dynamics and Modeling group </a> Climate Dynamics and Modeling group of Aiko Voigt at the University of Vienna. My research focuses on tropical precipitation and related processes, such as convectively coupled equatorial waves, mesoscale organization or monsoon circulations. My main area of interest is the semi-arid Sahel region of Africa.
+I am a PhD student and praedoc university assistant in the <a href="https://klimadynamik.univie.ac.at/"> Climate Dynamics and Modeling group </a> of Aiko Voigt at the University of Vienna. My research focuses on tropical precipitation and related processes, such as convectively coupled equatorial waves, mesoscale organization or monsoon circulations. My main area of interest is the semi-arid Sahel region of Africa.
