@@ -87,7 +87,7 @@ work:
   date_start: 2021-03-01
   date_end: 2021-03-31
 
-- position: Internship
+- position: Research Internship
   company_name: Acoustic Research Institute (ARI), Vienna
   company_url: ''
   company_logo: ''
