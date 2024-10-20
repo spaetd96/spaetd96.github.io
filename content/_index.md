@@ -25,7 +25,7 @@ sections:
         image:
           # Add your image background to `assets/media/`.
           #filename: stacked-peaks.svg
-          filename: titlepage.svg
+          filename: Recktangle.svg
           filters:
             brightness: 1.0
           size: cover
