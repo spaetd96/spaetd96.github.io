@@ -8,6 +8,7 @@ publishDate: '2024-10-18T13:41:00.497246Z'
 publication_types:
 - article-journal
 publication: '*Geophysical Research Letters*'
+doi: 10.1029/2024GL108856
 abstract: We propose the lag‐1 autocorrelation of daily precipitation as a simple
   diagnostic of tropical precipitation variability in climate models. This metric
   generally has a relatively uniform distribution of positive values across the tropics.
@@ -22,4 +23,7 @@ abstract: We propose the lag‐1 autocorrelation of daily precipitation as a sim
   the metric also tracks the accuracy of the representation of the relative importance
   of high frequency and low frequency convectively coupled equatorial waves in the
   models.
+links:
+- name: URL
+  url: https://agupubs.onlinelibrary.wiley.com/doi/full/10.1029/2024GL108856
 ---
