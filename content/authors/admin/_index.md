@@ -148,4 +148,4 @@ awards:
 
 ## About Me
 
-I am a PhD student and pre-doc university assistant in the Climate Dynamics and Modeling group of Aiko Voigt at the University of Vienna. My research focuses on tropical precipitation and related processes, such as convectively coupled equatorial waves, mesoscale organization or monsoon circulations. My main area of interest is the semi-arid Sahel region of Africa.
+I am a PhD student and praedoc university assistant in the Climate Dynamics and Modeling group of Aiko Voigt at the University of Vienna. My research focuses on tropical precipitation and related processes, such as convectively coupled equatorial waves, mesoscale organization or monsoon circulations. My main area of interest is the semi-arid Sahel region of Africa.
