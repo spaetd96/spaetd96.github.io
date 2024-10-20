@@ -30,8 +30,8 @@ sections:
           size: cover
           position: center
           parallax: false
-  
   - block: resume-experience
+    id: news
     content:
       username: admin
     design:
@@ -39,8 +39,6 @@ sections:
       date_format: 'January 2006'
       # Education or Experience section first?
       is_education_first: false
-
-
   #- block: markdown
   #  content:
   #    title: 'My Research'
@@ -71,7 +69,7 @@ sections:
       filters:
         folders:
           - publication
-        exclude_featured: false
+        exclude_featured: true
     design:
       view: citation
   - block: collection
