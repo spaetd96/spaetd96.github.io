@@ -24,7 +24,7 @@ role: PhD student
 
 # Organizations/Affiliations to display in Biography blox
 organizations:
-  - name: University of Vienna, Deparment of Meteorology
+  - name: University of Vienna, Deparment of Meteorology and Geophysics
     url: https://img.univie.ac.at/en/
 
 # Social network links
