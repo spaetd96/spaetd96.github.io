@@ -31,7 +31,7 @@ sections:
           position: center
           parallax: false
   - block: resume-experience
-    id: news
+    id: experience
     content:
       username: admin
     design:
