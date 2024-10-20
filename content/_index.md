@@ -93,9 +93,10 @@ sections:
     id: teaching
     content:
       title: Teaching
-      filters:
-        folders:
-          - event
-    design:
-      view: article-grid
-      columns: 1
+    #  filters:
+    #    folders:
+    #      - event
+    #design:
+    #  view: article-grid
+    #  columns: 1
+---
