@@ -50,6 +50,17 @@ interests:
   - West African monsoon
 
 education:
+
+  - area: PhD Candidate
+    institution: University of Vienna
+    date_start: 2021-04-01
+    date_end: ''
+
+  - area: Visiting Student
+    institution: Hebrew University of Jerusalem
+    date_start: 2023-09-01
+    date_end: 2023-10-07
+
   - area: MSc Physics
     institution: University of Vienna
     date_start: 2018-10-01
@@ -62,19 +73,12 @@ education:
 
 work:
 
-- position: Praedoc Researcher and PhD Candidate
+- position: Praedoc Researcher
   company_name: University of Vienna, Department of Meteorology and Geophysics
   company_url: ''
   company_logo: ''
   date_start: 2021-04-01
   #date_end: 2021-03-31
-
-- position: Reseach Stay
-  company_name: Hebrew University of Jerusalem, The Fredy and Nadine Herrmann Institute of Earth Sciences
-  company_url: ''
-  company_logo: ''
-  date_start: 2023-09-01
-  date_end: 2023-10-07
 
 - position: Praedoc Researcher
   company_name: University of Vienna, Aerosol Physics and Environmental Physics
