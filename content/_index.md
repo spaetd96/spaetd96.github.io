@@ -51,7 +51,7 @@ sections:
         exclude_featured: true
     design:
       view: citation
-  - block: markdown
+  - block: collection
     id: talks
     content:
       title: Talks
