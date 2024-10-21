@@ -51,16 +51,6 @@ sections:
         exclude_featured: true
     design:
       view: citation
-  #- block: collection
-  #  id: talks
-  #  content:
-  #    title: Talks
-  #    filters:
-  #      folders:
-  #        - event
-  #  design:
-  #    view: article-grid
-  #    columns: 1
   - block: collection
     id: talks
     content:
@@ -97,7 +87,7 @@ sections:
       subtitle: ''
       text: ''
       # Page type to display. E.g. post, talk, publication...
-      page_type: post
+      page_type: outreach
       # Choose how many pages you would like to display (0 = all pages)
       count: 0
       # Filter on criteria
