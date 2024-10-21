@@ -58,7 +58,7 @@ sections:
       subtitle: ''
       text: ''
       # Page type to display. E.g. post, talk, publication...
-      page_type: talks
+      page_type: talk_events
       # Choose how many pages you would like to display (0 = all pages)
       count: 0
       # Filter on criteria
@@ -87,7 +87,7 @@ sections:
       subtitle: ''
       text: ''
       # Page type to display. E.g. post, talk, publication...
-      page_type: outreach
+      page_type: outreach_events
       # Choose how many pages you would like to display (0 = all pages)
       count: 0
       # Filter on criteria
