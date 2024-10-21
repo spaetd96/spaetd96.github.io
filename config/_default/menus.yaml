@@ -16,8 +16,8 @@ main:
   - name: Talks
     url: /#talks
     weight: 13
-  - name: News
-    url: /#news
+  - name: Outreach
+    url: /#outreach
     weight: 14
   - name: Teaching
     url: /#teaching
