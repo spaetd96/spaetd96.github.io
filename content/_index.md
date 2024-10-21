@@ -70,7 +70,7 @@ sections:
       # Page type to display. E.g. post, talk, publication...
       page_type: post
       # Choose how many pages you would like to display (0 = all pages)
-      count: 5
+      count: 0
       # Filter on criteria
       filters:
         author: ""
@@ -90,14 +90,9 @@ sections:
       # Reduce spacing
       spacing:
         padding: [0, 0, 0, 0]
-  - block: collection
+  - block: markdown
     id: teaching
     content:
       title: Teaching
-    #  filters:
-    #    folders:
-    #      - event
-    #design:
-    #  view: article-grid
-    #  columns: 1
+      text: Test
 ---
