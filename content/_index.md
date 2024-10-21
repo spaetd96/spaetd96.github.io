@@ -58,13 +58,11 @@ sections:
       subtitle: ''
       text: ''
       # Page type to display. E.g. post, talk, publication...
-      page_type: post
+      page_type: talks
       # Choose how many pages you would like to display (0 = all pages)
       count: 0
       # Filter on criteria
       filters:
-        folders:
-            - talks
         author: ""
         category: ""
         tag: ""
@@ -89,13 +87,11 @@ sections:
       subtitle: ''
       text: ''
       # Page type to display. E.g. post, talk, publication...
-      page_type: post
+      page_type: outreach
       # Choose how many pages you would like to display (0 = all pages)
       count: 0
       # Filter on criteria
       filters:
-        folders:
-            - outreach
         author: ""
         category: ""
         tag: ""
