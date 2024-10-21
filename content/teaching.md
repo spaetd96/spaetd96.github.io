@@ -1,6 +1,5 @@
 ---
 title: Teaching
-type: landing
 ---
 
 ### Courses

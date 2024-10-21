@@ -1,6 +1,5 @@
 ---
 title: Contact
-type: landing
 ---
 
 **Dorian Spät**\
