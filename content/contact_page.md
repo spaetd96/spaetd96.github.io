@@ -1,5 +1,6 @@
 ---
-title: Contact
+title: "Contact"
+date: ""
 ---
 
 **Dorian Spät**\

@@ -1,6 +1,6 @@
 ---
-title: 'Experience'
-date: 2024-10-21
+title: "CV"
+date: ""
 type: landing
 
 design:

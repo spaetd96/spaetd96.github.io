@@ -1,5 +1,6 @@
 ---
-title: Teaching
+title: "Teaching"
+date: ""
 ---
 
 ### Courses
