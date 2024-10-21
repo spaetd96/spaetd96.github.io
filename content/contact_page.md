@@ -1,6 +1,6 @@
 ---
 title: Contact
-#view: article-grid
+type: landing
 ---
 
 **Dorian Spät**\

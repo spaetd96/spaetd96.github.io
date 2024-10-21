@@ -1,6 +1,6 @@
 ---
 title: Teaching
-view: article-grid
+type: landing
 ---
 
 ### Courses
