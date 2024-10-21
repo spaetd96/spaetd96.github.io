@@ -4,4 +4,4 @@ summary: CHESS summer school on Land-Atmosphere Interaction Processes and Convec
 date: 2022-07-24
 ---
 
-Short blog entry.
+This page is going to be filled.

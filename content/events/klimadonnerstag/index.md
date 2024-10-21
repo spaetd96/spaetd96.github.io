@@ -11,4 +11,4 @@ date: 2023-07-20
 #  caption: 'Image credit: [**Unsplash**](https://unsplash.com)'
 ---
 
-Short blog entry with picture.
+This page is going to be filled.

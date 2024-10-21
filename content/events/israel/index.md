@@ -4,4 +4,4 @@ summary: The Fredy & Nadine Herrmann Institute of Earth Sciences, Hebrew Univers
 date: 2023-09-01
 ---
 
-Short blog entry.
+This page is going to be filled.
