@@ -1,6 +1,6 @@
 ---
-title: Shifting Realities
-summary: Fünfter Zukunftsdialog at the BG Vöcklabruck (a school in Upper Austria)
+title: Outreach Event
+summary: Shifting Realities - Fünfter Zukunftsdialog at the BG Vöcklabruck
 date: 2024-03-13
 ---
 
