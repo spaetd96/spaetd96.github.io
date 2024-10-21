@@ -45,7 +45,8 @@ profiles:
     url: https://orcid.org/0000-0002-9029-297X
 
 interests:
-  - Tropical Dynamics and Precipitation
+  - Tropical Precipitation
+  - Tropical Dynamics
   - Equatorial waves
   - West African monsoon
 
