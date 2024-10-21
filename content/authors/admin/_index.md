@@ -47,8 +47,9 @@ profiles:
 interests:
   - Tropical Precipitation
   - Tropical Dynamics
-  - Equatorial waves
-  - West African monsoon
+  - Equatorial Waves
+  - West African Monsoon
+  - Science Communication
 
 education:
 
