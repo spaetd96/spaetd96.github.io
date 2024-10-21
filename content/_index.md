@@ -33,7 +33,7 @@ sections:
           parallax: false
       # set spacing
       spacing:
-        padding: ['20px', 0, '20px', 0]
+        padding: ['30px', 0, '30px', 0]
   - block: resume-experience
     id: experience
     content:
@@ -45,7 +45,7 @@ sections:
       is_education_first: false
       # set spacing
       spacing:
-        padding: ['20px', 0, '20px', 0]
+        padding: ['30px', 0, '30px', 0]
   - block: collection
     id: papers
     content:
@@ -59,7 +59,7 @@ sections:
       view: citation
       # set spacing
       spacing:
-        padding: ['20px', 0, '20px', 0]
+        padding: ['30px', 0, '30px', 0]
   - block: collection
     id: talks
     content:
@@ -88,7 +88,7 @@ sections:
       view: date-title-summary
       # set spacing
       spacing:
-        padding: ['20px', 0, '20px', 0]
+        padding: ['30px', 0, '30px', 0]
   - block: collection
     id: outreach
     content:
@@ -117,7 +117,7 @@ sections:
       view: date-title-summary
       # set spacing
       spacing:
-        padding: ['20px', 0, '20px', 0]
+        padding: ['30px', 0, '30px', 0]
   - block: markdown
     id: teaching
     content:
