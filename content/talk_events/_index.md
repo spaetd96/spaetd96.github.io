@@ -1,4 +1,4 @@
 ---
-title: Talks
-view: article-grid
+#title: Talks
+#view: article-grid
 ---

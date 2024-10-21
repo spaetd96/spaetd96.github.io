@@ -1,4 +1,4 @@
 ---
-title: Outreach
+title: Blog
 view: article-grid
 ---
