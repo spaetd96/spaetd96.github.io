@@ -23,8 +23,8 @@ main:
     url: /#outreach
     weight: 15
   - name: Contact
-    url: /#contact
-    weight: 16
+    url: contact_page/
+    weight: 20
   #- name: Experience
   #  url: experience/
   #  weight: 20
