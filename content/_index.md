@@ -31,6 +31,9 @@ sections:
           size: cover
           position: center
           parallax: false
+      # set spacing
+      spacing:
+        padding: ['20px', 0, '20px', 0]
   - block: resume-experience
     id: experience
     content:
@@ -40,6 +43,9 @@ sections:
       date_format: 'January 2006'
       # Education or Experience section first?
       is_education_first: false
+      # set spacing
+      spacing:
+        padding: ['20px', 0, '20px', 0]
   - block: collection
     id: papers
     content:
@@ -51,6 +57,9 @@ sections:
         exclude_featured: true
     design:
       view: citation
+      # set spacing
+      spacing:
+        padding: ['20px', 0, '20px', 0]
   - block: collection
     id: talks
     content:
@@ -77,9 +86,9 @@ sections:
     design:
       # Choose a layout view
       view: date-title-summary
-      # Reduce spacing
+      # set spacing
       spacing:
-        padding: [0, 0, 0, 0]
+        padding: ['20px', 0, '20px', 0]
   - block: collection
     id: outreach
     content:
@@ -106,9 +115,9 @@ sections:
     design:
       # Choose a layout view
       view: date-title-summary
-      # Reduce spacing
+      # set spacing
       spacing:
-        padding: ['20px', 0, 0, 0]
+        padding: ['20px', 0, '20px', 0]
   - block: markdown
     id: teaching
     content:
