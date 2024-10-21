@@ -7,8 +7,8 @@ main:
   - name: Bio
     url: /
     weight: 10
-  - name: Experience
-    url: /#experience
+  - name: CV
+    url: /#cv
     weight: 11
   - name: Papers
     url: /#papers
@@ -19,8 +19,8 @@ main:
   - name: Teaching
     url: /#teaching
     weight: 14
-  - name: Outreach
-    url: /#outreach
+  - name: Events
+    url: /#events
     weight: 15
   - name: Contact
     url: contact_page/

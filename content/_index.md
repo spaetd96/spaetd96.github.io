@@ -35,7 +35,7 @@ sections:
       #spacing:
       #  padding: ['30px', 0, '30px', 0]
   - block: resume-experience
-    id: experience
+    id: cv
     content:
       username: admin
     design:
@@ -67,7 +67,7 @@ sections:
       subtitle: ''
       text: ''
       # Page type to display. E.g. post, talk, publication...
-      page_type: talk_events
+      page_type: talks
       # Choose how many pages you would like to display (0 = all pages)
       count: 5
       # Filter on criteria
@@ -96,13 +96,13 @@ sections:
       title: Teaching
       text: ""
   - block: collection
-    id: outreach
+    id: news
     content:
-      title: Outreach
+      title: Events
       subtitle: ''
       text: ''
       # Page type to display. E.g. post, talk, publication...
-      page_type: outreach_events
+      page_type: events
       # Choose how many pages you would like to display (0 = all pages)
       count: 5
       # Filter on criteria
@@ -125,12 +125,4 @@ sections:
       spacing:
         #padding: ['30px', 0, '30px', 0]
         padding: [0, 0, 0, 0]
-  - block: markdown
-    id: contact
-    content:
-      title: Contact
-      text: ""
-      filters:
-        folders:
-          - contact_page
 ---
