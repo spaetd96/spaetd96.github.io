@@ -96,7 +96,7 @@ sections:
       title: Teaching
       text: ""
   - block: collection
-    id: news
+    id: events
     content:
       title: Events
       subtitle: ''
