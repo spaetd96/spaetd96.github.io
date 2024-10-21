@@ -51,12 +51,12 @@ sections:
         exclude_featured: true
     design:
       view: citation
-  #- block: collection
-  #  id: talks
-  #  content:
-  #    title: Talks
-  #    subtitle: ''
-  #    text: hallo
+  - block: collection
+    id: talks
+    content:
+      title: Talks
+      subtitle: ''
+      text: hallo
   - block: collection
     id: outreach
     content:
@@ -69,6 +69,8 @@ sections:
       count: 5
       # Filter on criteria
       filters:
+        folders:
+          - post
         author: ""
         category: ""
         tag: ""
