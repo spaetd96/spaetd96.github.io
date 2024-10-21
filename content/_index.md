@@ -114,4 +114,12 @@ sections:
     content:
       title: Teaching
       text: ""
+  - block: markdown
+    id: contact
+    content:
+      title: Contact
+      text: ""
+      filters:
+        folders:
+          - contact_page
 ---
