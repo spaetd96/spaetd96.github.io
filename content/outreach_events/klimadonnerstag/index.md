@@ -1,6 +1,6 @@
 ---
 title: Klimadonnerstag
-summary: Childrens outreach program
+summary: "Childrens outreach program by the University of Vienna (DOCK: Labor für Zukunftsfragen)"
 date: 2023-07-20
 #authors:
 #  - admin

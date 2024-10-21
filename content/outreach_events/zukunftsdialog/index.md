@@ -1,6 +1,6 @@
 ---
 title: Shifting Realities
-summary: 5. Zukunftsdialog at the BG Vöcklabruck.
+summary: 5. Zukunftsdialog at the BG Vöcklabruck (a school in Upper Austria)
 date: 2024-03-13
 #authors:
 #  - admin
