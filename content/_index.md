@@ -34,18 +34,6 @@ sections:
       # set spacing
       #spacing:
       #  padding: ['30px', 0, '30px', 0]
-  #- block: resume-experience
-  #  id: cv
-  #  content:
-  #    username: admin
-  #  design:
-  #    # Hugo date format
-  #    date_format: 'January 2006'
-  #    # Education or Experience section first?
-  #    is_education_first: false
-  #    # set spacing
-  #    #spacing:
-  #    #  padding: ['30px', 0, '30px', 0]
   - block: collection
     id: papers
     content:
@@ -90,11 +78,6 @@ sections:
       spacing:
         #padding: ['30px', 0, '30px', 0]
         padding: [0, 0, 0, 0]
-  - block: markdown
-    id: teaching
-    content:
-      title: Teaching
-      text: ""
   - block: collection
     id: events
     content:
