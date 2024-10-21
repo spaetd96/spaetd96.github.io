@@ -98,6 +98,8 @@ sections:
       filters:
         folders:
           - teaching
+      design:
+        view: citation
       #text: 
       #  − Teaching Assistant - Climate Dynamics and Diagnostics (WS 2022, WS 2023). Master Program at the Meteorology and Geophysics department, University of Vienna.\
       #  − Teaching Assistant - Climate Modelling Lab (SS 2023, SS 2024). Master Program at the Meteorology and Geophysics department, University of Vienna.\
