@@ -51,7 +51,7 @@ sections:
   - block: collection
     id: talks
     content:
-      title: Talks
+      title: Science Talks
       subtitle: ''
       text: ''
       # Page type to display. E.g. post, talk, publication...
@@ -81,7 +81,7 @@ sections:
   - block: collection
     id: events
     content:
-      title: Events
+      title: Recent Events
       subtitle: ''
       text: ''
       # Page type to display. E.g. post, talk, publication...
