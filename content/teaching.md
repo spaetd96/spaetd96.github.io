@@ -1,6 +1,6 @@
 ---
-title: "Teaching"
-date: ""
+title: Teaching
+date: 2024-10-21
 ---
 
 ### Courses

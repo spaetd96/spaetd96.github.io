@@ -1,6 +1,6 @@
 ---
-title: "Contact"
-date: ""
+title: Contact
+date: 2024-10-21
 ---
 
 **Dorian Spät**\
