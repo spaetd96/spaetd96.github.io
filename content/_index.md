@@ -106,6 +106,6 @@ sections:
       view: date-title-summary
       # set spacing
       spacing:
-        padding: ['80px', 0, 0, 0]
+        padding: ['6rem', 0, 0, 0]
         #padding: [0, 0, 0, 0]
 ---
