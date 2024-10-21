@@ -94,8 +94,6 @@ sections:
       count: 0
       # Filter on criteria
       filters:
-        folders:
-          - outreach_events
         author: ""
         category: ""
         tag: ""
