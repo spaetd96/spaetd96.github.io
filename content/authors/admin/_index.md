@@ -30,8 +30,8 @@ organizations:
 # Social network links
 # Need to use another icon? Simply download the SVG icon to your `assets/media/icons/` folder.
 profiles:
-  - icon: at-symbol
-    url: "dorian.spaet@univie.ac.at"
+  - icon: <a href="mailto:dorian.spaet@univie.ac.at">at-symbol</a>
+    #url: "dorian.spaet@univie.ac.at"
     label: E-mail Me
   - icon: brands/x
     url: https://twitter.com/zu_spaeti
