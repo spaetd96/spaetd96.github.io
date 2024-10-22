@@ -1,9 +1,7 @@
 ---
-title: Contact
+title: Impressum
 date: 2024-10-21
 ---
-
-### Impressum
 
 **Dorian Spät**\
 Department of Meteorology and Geophysics\
