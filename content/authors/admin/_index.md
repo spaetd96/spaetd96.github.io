@@ -31,14 +31,14 @@ organizations:
 # Need to use another icon? Simply download the SVG icon to your `assets/media/icons/` folder.
 profiles:
   - icon: at-symbol
-    url: 'dorian.spaet@univie.ac.at'
+    url: dorian.spaet@univie.ac.at
     label: E-mail Me
   - icon: brands/x
     url: https://twitter.com/zu_spaeti
   - icon: brands/github
     url: https://github.com/spaetd96
   - icon: brands/linkedin
-    url: www.linkedin.com/in/dorian-spät-2857171aa
+    url: https://www.linkedin.com/in/dorian-sp%C3%A4t-2857171aa/
   - icon: academicons/google-scholar
     url: https://scholar.google.com/citations?hl=en&user=Ao0o_lUAAAAJ
   - icon: academicons/orcid
