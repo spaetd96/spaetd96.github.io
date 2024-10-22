@@ -31,7 +31,7 @@ organizations:
 # Need to use another icon? Simply download the SVG icon to your `assets/media/icons/` folder.
 profiles:
   - icon: at-symbol
-    url: <a href="mailto:dorian.spaet@univie.ac.at">
+    url: dorian.spaet@univie.ac.at
     label: E-mail Me
   - icon: brands/x
     url: https://twitter.com/zu_spaeti
