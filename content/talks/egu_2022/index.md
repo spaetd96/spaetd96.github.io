@@ -2,6 +2,9 @@
 title: EGU 2022
 summary: "Talk in the session 'The Greening of the Sahara – reconstructions, impacts and theory'"
 date: 2022-05-25
+
+image:
+  caption: 'Image credit: Dorian Spät'
 ---
 
 ### A Moist Static Energy Budget Perspective on Precipitation Changes during the Mid-Holocene African Humid Period

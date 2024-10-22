@@ -2,6 +2,9 @@
 title: EGU 2024
 summary: "Talk in the session 'Earth system models at km-scale and beyond: Implications of resolving smaller scale processes on the climate and challenges'"
 date: 2024-04-16
+
+image:
+  caption: 'Image credit: Dorian Spät'
 ---
 
 ### Autocorrelation – A Simple Diagnostic for Tropical Precipitation in Global Kilometer-Scale Climate Models
