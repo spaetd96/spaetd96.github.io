@@ -35,8 +35,8 @@ profiles:
     label: E-mail Me
   - icon: brands/x
     url: https://twitter.com/zu_spaeti
-  - icon: brands/github
-    url: https://github.com/spaetd96
+  #- icon: brands/github
+  #  url: https://github.com/spaetd96
   - icon: brands/linkedin
     url: https://www.linkedin.com/in/dorian-sp%C3%A4t-2857171aa/
   - icon: academicons/google-scholar
