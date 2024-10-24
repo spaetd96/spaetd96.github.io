@@ -8,5 +8,5 @@ image:
 ---
 
 In late spring of 2023, I participated in the cycle 3 [nextGEMS](https://nextgems-h2020.eu/) hackathon at the Universidad Compultense de Madrid.
-In my second hackathon, I focused on precipitation biases of the models and worked on my [first paper](https://spaetd96.github.io/publication/spat-autocorrelationsimple-nodate/)
+In my second hackathon, I focused on precipitation biases of the models and worked on my [first paper](https://doi.org/10.1029/2024GL108856)
 in which the cycle 3 simulations played an important role, providing 5 simulated years of global kilometer-scale data.
