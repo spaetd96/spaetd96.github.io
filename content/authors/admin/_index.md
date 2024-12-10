@@ -35,6 +35,8 @@ profiles:
     label: E-mail Me
   - icon: brands/x
     url: https://twitter.com/zu_spaeti
+  - icon: assets/media/icons/bsky.webp
+    url: https://bsky.app/profile/zu-spaet.bsky.social
   #- icon: brands/github
   #  url: https://github.com/spaetd96
   - icon: brands/linkedin
