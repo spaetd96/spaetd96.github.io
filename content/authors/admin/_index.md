@@ -33,9 +33,9 @@ profiles:
   - icon: at-symbol
     url: "mailto:dorian.spaet@univie.ac.at"
     label: E-mail Me
-  - icon: brands/x
-    url: https://twitter.com/zu_spaeti
-  - icon: assets/media/icons/bsky.webp
+  #- icon: brands/x
+  #  url: https://twitter.com/zu_spaeti
+  - icon: assets/media/icons/bsky-removebg.png
     url: https://bsky.app/profile/zu-spaet.bsky.social
   #- icon: brands/github
   #  url: https://github.com/spaetd96
