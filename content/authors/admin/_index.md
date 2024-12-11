@@ -24,7 +24,7 @@ role: PhD student
 
 # Organizations/Affiliations to display in Biography blox
 organizations:
-  - name: University of Vienna, Deparment of Meteorology and Geophysics
+  - name: University of Vienna, Department of Meteorology and Geophysics
     url: https://img.univie.ac.at/en/
 
 # Social network links
@@ -156,4 +156,4 @@ awards:
 
 ## About Me
 
-I am a PhD student and praedoc university assistant in the <a href="https://klimadynamik.univie.ac.at/"> Climate Dynamics and Modeling group </a> of Aiko Voigt at the University of Vienna. My research focuses on tropical precipitation and related processes, such as convectively coupled equatorial waves, mesoscale organization or monsoon circulations. My main area of interest is the semi-arid Sahel region of Africa.
+I am a PhD student and university assistant in the <a href="https://klimadynamik.univie.ac.at/"> Climate Dynamics and Modeling group </a> of Aiko Voigt at the University of Vienna. I also collaborate closely with <a href="https://www.ldeo.columbia.edu/~biasutti/"> Michela Biasutti </a> at Columbia University. My research focuses on tropical precipitation and related processes, such as convectively coupled equatorial waves, mesoscale organization or monsoon circulations. My main area of interest is the semi-arid Sahel region of Africa.
