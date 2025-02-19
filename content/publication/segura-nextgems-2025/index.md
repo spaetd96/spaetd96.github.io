@@ -1,0 +1,90 @@
+---
+title: 'nextGEMS: entering the era of kilometer-scale Earth system modeling'
+authors:
+- Hans Segura
+- Xabier Pedruzo-Bagazgoitia
+- Philipp Weiss
+- Sebastian K Müller
+- Thomas Rackow
+- Junhong Lee
+- Edgar Dolores-Tesillos
+- Imme Benedict
+- Matthias Aengenheyster
+- Razvan Aguridan
+- Gabriele Arduini
+- Alexander J Baker
+- Swantje Bastin
+- Eulàlia Baulenas
+- Tobias Becker
+- Sebastian Beyer
+- Hendryk Bockelmann
+- Nils Brüggemann
+- Lukas Brunner
+- Suvarchal K Cheedela
+- Sushant Das
+- Jasper Denissen
+- Ian Dragaud
+- Piotr Dziekan
+- Madeleine Ekblom
+- Jan Frederik Engels
+- Monika Esch
+- Richard Forbes
+- Claudia Frauen
+- Lilli Freischem
+- Diego García-Maroto
+- Philipp Geier
+- Paul Gierz
+- Álvaro González-Cervera
+- Katherine Grayson
+- Matthew Griffith
+- Oliver Gutjahr
+- Helmuth Haak
+- Ioan Hadade
+- Kerstin Haslehner
+- Aleksei Koldunov
+- Nikolay Koldunov
+- Tobias Kölling
+- Shunya Koseki
+- Sergey Kosukhin
+- Josh Kousal
+- Peter Kuma
+- Arjun U Kumar
+- Rumeng Li
+- Nicolas Maury
+- Maximilian Meindl
+- Sebastian Milinski
+- Kristian Mogensen
+- Bimochan Niraula
+- Jakub Nowak
+- Divya Sri Praturi
+- Ulrike Proske
+- Dian Putrasahan
+- René Redler
+- David Santuy
+- Domokos Sármány
+- Reiner Schnur
+- Patrick Scholz
+- Dmitry Sidorenko
+- Dorian Spät
+- Birgit Sützl
+- Daisuke Takasuka
+- Adrian Tompkins
+- Alejandro Uribe
+- Mirco Valentini
+- Menno Veerman
+- Aiko Voigt
+- Sarah Warnau
+- Fabian Wachsmann
+- Marta Wacławczyk
+- Nils Wedi
+- Karl-Hermann Wieners
+- Jonathan Wille
+- Marius Winkler
+- Yuting Wu
+- Florian Ziemen
+- Janos Zimmermann
+date: '2025-01-01'
+publishDate: '2025-02-19T10:52:06.400121Z'
+publication_types:
+- article-journal
+---
