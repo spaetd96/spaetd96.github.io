@@ -7,4 +7,4 @@ image:
   caption: 'Image credit: Klara Butz'
 ---
 
-This page is going to be filled.
+Together with other members of our department, I taught a fun and interactive course on the climate crisis and its effects as part of the "Children's University" organized by the University of Vienna.
