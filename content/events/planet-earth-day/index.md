@@ -1,5 +1,5 @@
 ---
-title: Planet Earth Day
+title: Outreach Event
 summary: University of Vienna/EGU Planet Earth Day 2025
 date: 2025-05-12
 
