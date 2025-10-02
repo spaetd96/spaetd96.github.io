@@ -9,9 +9,10 @@ authors:
 - Junhong Lee
 - Edgar Dolores-Tesillos
 - Imme Benedict
-- including Dorian Spät et al.
+- et al.
+- including Spät Dorian
 date: '2025-02-01'
-publishDate: '2025-10-02T09:17:55.523042Z'
+publishDate: '2025-10-02T09:21:54.188367Z'
 publication_types:
 - manuscript
 doi: 10.5194/egusphere-2025-509

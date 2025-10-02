@@ -7,7 +7,7 @@ authors:
 - Andreas Gattringer
 - Bernadett Weinzierl
 date: '2023-10-01'
-publishDate: '2025-10-02T09:17:55.515912Z'
+publishDate: '2025-10-02T09:21:54.181234Z'
 publication_types:
 - article-journal
 publication: '*Atmospheric Measurement Techniques*'
