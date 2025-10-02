@@ -7,7 +7,7 @@ authors:
 - David Schuhbauer
 - Aiko Voigt
 date: '2024-08-01'
-publishDate: '2025-10-02T08:41:50.070177Z'
+publishDate: '2025-10-02T09:04:06.412476Z'
 publication_types:
 - article-journal
 publication: '*Geophysical Research Letters*'

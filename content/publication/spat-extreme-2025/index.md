@@ -5,7 +5,7 @@ authors:
 - Michela Biasutti
 - Aiko Voigt
 date: '2025-08-01'
-publishDate: '2025-10-02T08:41:50.096649Z'
+publishDate: '2025-10-02T09:04:06.434608Z'
 publication_types:
 - article-journal
 publication: '*Geophysical Research Letters*'
