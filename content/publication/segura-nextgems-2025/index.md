@@ -11,12 +11,13 @@ authors:
 - Imme Benedict
 - et al.
 - including Spät Dorian
-date: '2025-02-01'
-publishDate: '2025-10-02T09:21:54.188367Z'
+date: '2025-10-01'
+publishDate: '2025-10-23T12:14:55.724278Z'
 publication_types:
 - manuscript
-doi: 10.5194/egusphere-2025-509
+publication: '*Geoscientific Model Development*'
+doi: 10.5194/gmd-18-7735-2025
 links:
 - name: URL
-  url: https://egusphere.copernicus.org/preprints/2025/egusphere-2025-509/
+  url: https://gmd.copernicus.org/articles/18/7735/2025/
 ---
