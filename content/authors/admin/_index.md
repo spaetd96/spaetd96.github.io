@@ -58,7 +58,7 @@ education:
   - area: PhD Candidate
     institution: University of Vienna
     date_start: 2021-04-01
-    date_end: ''
+    date_end: 2025-09-18
 
   - area: Visiting Student
     institution: Hebrew University of Jerusalem
