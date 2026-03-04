@@ -156,4 +156,6 @@ awards:
 
 ## About Me
 
-I am a climate scientist specialising in tropical rainfall. I recently completed my PhD in the <a href="https://klimadynamik.univie.ac.at/"> Climate Dynamics and Modeling group </a> at the University of Vienna, led by Aiko Voigt. During this time, I collaborated closely with <a href="https://www.ldeo.columbia.edu/~biasutti/"> Michela Biasutti </a> at Columbia University. My research focuses on tropical rainfall and related processes, such as convectively coupled equatorial waves, mesoscale organization or monsoon circulations. My main area of interest is the semi-arid Sahel region of Africa.
+I am a climate scientist specialising in tropical rainfall. I will soon start a post-doc position with Simona Bordoni at the University of Trento, as part of the ACCLIMATISE project (Attribution of a
+Changing CLIMate in the AssessmenT of malaria Intervention Strategy Efficiency).
+I recently completed my PhD in the <a href="https://klimadynamik.univie.ac.at/"> Climate Dynamics and Modeling group </a> at the University of Vienna, led by Aiko Voigt. During this time, I collaborated closely with <a href="https://www.ldeo.columbia.edu/~biasutti/"> Michela Biasutti </a> at Columbia University. My research focuses on tropical rainfall and related processes, such as convectively coupled equatorial waves, mesoscale organization or monsoon circulations. My main area of interest is the semi-arid Sahel region of Africa.
