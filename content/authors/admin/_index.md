@@ -20,12 +20,12 @@ superuser: true
 highlight_name: true
 
 # Role/position/tagline
-role: PhD student
+role: Postdoctoral researcher
 
 # Organizations/Affiliations to display in Biography blox
 organizations:
-  - name: University of Vienna, Department of Meteorology and Geophysics
-    url: https://img.univie.ac.at/en/
+  - name: University of Trento. Department of Civil, Environmental and Mechanical Engineering
+    url: https://webapps.unitn.it/du/en/StrutturaAccademica/STO0008626/Persone
 
 # Social network links
 # Need to use another icon? Simply download the SVG icon to your `assets/media/icons/` folder.
