@@ -24,7 +24,7 @@ role: Postdoctoral researcher
 
 # Organizations/Affiliations to display in Biography blox
 organizations:
-  - name: University of Trento<br>Department of Civil, Environmental and Mechanical Engineering
+  - name: University of Trento  Department of Civil, Environmental and Mechanical Engineering
     url: https://webapps.unitn.it/du/en/StrutturaAccademica/STO0008626/Persone
 
 # Social network links
