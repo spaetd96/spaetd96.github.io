@@ -237,7 +237,7 @@ function renderForecastTable(data) {
   let currentDay = null;
   for (let i = 0; i < n; i++) {
     const d = times[i];
-    const dayKey = d.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short' });
+    const dayKey = d.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
     if (dayKey !== currentDay) {
       dayGroups.push({ label: dayKey, count: 1 });
       currentDay = dayKey;
@@ -262,17 +262,17 @@ function renderForecastTable(data) {
   table.appendChild(dayRow);
 
   // ── Row 2: Hours ──
-  const subHourly = times.some(t => t.getMinutes() !== 0);
+  const subHourly = times.some(t => t.getUTCMinutes() !== 0);
   const hourRow = document.createElement('tr');
   hourRow.className = 'fc-row-hours';
   const hourLabel = document.createElement('td');
   hourLabel.className = 'fc-label';
-  hourLabel.textContent = subHourly ? 'Time' : 'Hour';
+  hourLabel.textContent = subHourly ? 'Time (UTC)' : 'Hour (UTC)';
   hourRow.appendChild(hourLabel);
   for (let i = 0; i < n; i++) {
     const td = document.createElement('td');
-    const hh = String(times[i].getHours()).padStart(2, '0');
-    const mm = String(times[i].getMinutes()).padStart(2, '0');
+    const hh = String(times[i].getUTCHours()).padStart(2, '0');
+    const mm = String(times[i].getUTCMinutes()).padStart(2, '0');
     td.textContent = subHourly ? `${hh}:${mm}` : hh;
     hourRow.appendChild(td);
   }
@@ -287,7 +287,7 @@ function renderForecastTable(data) {
     iconRow.appendChild(iconLabel);
     for (let i = 0; i < n; i++) {
       const td = document.createElement('td');
-      td.textContent = weatherIcon(cloudCover[i], rain[i], times[i].getHours());
+      td.textContent = weatherIcon(cloudCover[i], rain[i], times[i].getUTCHours());
       iconRow.appendChild(td);
     }
     table.appendChild(iconRow);
