@@ -15,6 +15,7 @@
   flex: 1;
   width: 100%;
   min-height: 0;
+  max-height: calc(100vh - 160px);
 }
 
 /* ── Info box (top-left, overlaid on map) ───────────────────────────────── */
@@ -344,6 +345,13 @@
   #fc-info-box {
     max-width: 220px;
     padding: 8px 10px;
+  }
+  #fc-model-wrapper {
+    flex-wrap: wrap;
+  }
+  #fc-model-select {
+    max-width: 100%;
+    width: 100%;
   }
   #fc-forecast-panel {
     max-height: 60vh;

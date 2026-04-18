@@ -57,7 +57,7 @@ const WIND_STOPS = [
 
 // ── State ────────────────────────────────────────────────────────────────────
 
-let map, pinMarker = null, currentModel = 'arome', windUnit = 'ms', displayTZ = 'UTC';
+let map, pinMarker = null, currentModel = 'arome', windUnit = 'kt', displayTZ = 'local';
 let lastForecastData = null;
 
 // ── Init ─────────────────────────────────────────────────────────────────────
