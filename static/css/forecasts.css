@@ -4,7 +4,7 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 60px); /* subtract Hugo Blox navbar height */
+  height: calc(100vh - 60px);
   background: #111;
   font-family: inherit;
 }
@@ -14,7 +14,7 @@
 #fc-map {
   flex: 1;
   width: 100%;
-  min-height: 0; /* allow flex child to shrink */
+  min-height: 0;
 }
 
 /* ── Info box (top-left, overlaid on map) ───────────────────────────────── */
@@ -28,7 +28,7 @@
   border: 1px solid rgba(255,255,255,0.12);
   border-radius: 8px;
   padding: 10px 14px;
-  max-width: 280px;
+  max-width: 300px;
   color: #e0e0e0;
   font-size: 0.8rem;
   line-height: 1.5;
@@ -40,21 +40,37 @@
   font-size: 0.95rem;
   font-weight: 700;
   color: #ffffff;
-  margin-bottom: 2px;
+  margin-bottom: 4px;
   letter-spacing: 0.02em;
 }
 
-#fc-info-variable {
-  font-size: 0.85rem;
-  color: #26a69a; /* teal accent matching site theme */
-  margin-bottom: 4px;
-  font-weight: 600;
+#fc-model-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
 }
 
-#fc-info-reftime {
+#fc-model-wrapper label {
+  font-weight: 600;
   color: #bdbdbd;
+  white-space: nowrap;
   font-size: 0.78rem;
-  margin-bottom: 4px;
+}
+
+#fc-model-select {
+  background: #1e1e1e;
+  border: 1px solid rgba(255,255,255,0.18);
+  border-radius: 5px;
+  color: #e0e0e0;
+  padding: 3px 6px;
+  font-size: 0.78rem;
+  cursor: pointer;
+  outline: none;
+  flex: 1;
+}
+#fc-model-select:focus {
+  border-color: #26a69a;
 }
 
 #fc-info-resolution {
@@ -79,46 +95,27 @@
   text-decoration: underline;
 }
 
-/* ── Variable selector + spinner (top-right, overlaid on map) ───────────── */
+/* ── Click hint ─────────────────────────────────────────────────────────── */
 
-#fc-controls {
+#fc-click-hint {
   position: absolute;
-  top: 12px;
-  right: 12px;
-  z-index: 1000;
-  background: rgba(18, 18, 18, 0.88);
-  border: 1px solid rgba(255,255,255,0.12);
-  border-radius: 8px;
-  padding: 10px 14px;
-  color: #e0e0e0;
-  font-size: 0.82rem;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  backdrop-filter: blur(4px);
-}
-
-#fc-controls label {
-  font-weight: 600;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 999;
+  background: rgba(18, 18, 18, 0.85);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 20px;
+  padding: 8px 22px;
   color: #bdbdbd;
+  font-size: 0.85rem;
+  backdrop-filter: blur(4px);
+  pointer-events: none;
   white-space: nowrap;
 }
 
-#fc-var-select {
-  background: #1e1e1e;
-  border: 1px solid rgba(255,255,255,0.18);
-  border-radius: 5px;
-  color: #e0e0e0;
-  padding: 4px 8px;
-  font-size: 0.82rem;
-  cursor: pointer;
-  outline: none;
-}
-#fc-var-select:focus {
-  border-color: #26a69a;
-}
+/* ── Spinner ─────────────────────────────────────────────────────────────── */
 
-/* spinner */
 .fc-spin-ring {
   width: 18px;
   height: 18px;
@@ -131,158 +128,189 @@
 
 .hidden { display: none !important; }
 
-/* ── Chart panel (right side, slides in on map click) ───────────────────── */
+/* ── Forecast panel (bottom overlay) ────────────────────────────────────── */
 
-#fc-chart-panel {
+#fc-forecast-panel {
   position: absolute;
+  left: 0;
   right: 0;
-  top: 0;
-  bottom: 80px; /* leave room for bottom bar */
-  width: 420px;
+  bottom: 0;
   z-index: 1000;
-  background: rgba(18, 18, 18, 0.93);
-  border-left: 1px solid rgba(255,255,255,0.1);
-  padding: 16px 14px 14px;
+  background: rgba(18, 18, 18, 0.96);
+  border-top: 2px solid rgba(255,255,255,0.15);
   display: flex;
   flex-direction: column;
-  gap: 8px;
   backdrop-filter: blur(6px);
+  max-height: 52vh;
 }
 
-#fc-chart-close {
-  align-self: flex-end;
+#fc-forecast-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  flex-shrink: 0;
+}
+
+#fc-forecast-location {
+  font-size: 0.82rem;
+  color: #80cbc4;
+  font-weight: 600;
+}
+
+#fc-forecast-close {
   background: transparent;
   border: none;
   color: #9e9e9e;
-  font-size: 1.1rem;
+  font-size: 1.2rem;
   cursor: pointer;
-  padding: 0;
+  padding: 2px 6px;
   line-height: 1;
+  border-radius: 4px;
 }
-#fc-chart-close:hover { color: #fff; }
-
-#fc-chart-location {
-  font-size: 0.75rem;
-  color: #80cbc4;
-  text-align: center;
-  min-height: 1.1em;
+#fc-forecast-close:hover {
+  color: #fff;
+  background: rgba(255,255,255,0.08);
 }
 
-#fc-chart {
-  flex: 1;
-  min-height: 0;
-}
+/* Loading state */
 
-#fc-compass-row {
+#fc-forecast-loading {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: space-around;
-  padding: 4px 0;
-  border-top: 1px solid rgba(255,255,255,0.08);
-  margin-top: 4px;
-  min-height: 28px;
-  flex-shrink: 0;
-}
-
-.fc-compass-item {
-  display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
-  cursor: default;
-}
-
-/* ── Bottom bar ─────────────────────────────────────────────────────────── */
-
-#fc-bottom-bar {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  background: rgba(18, 18, 18, 0.95);
-  border-top: 1px solid rgba(255,255,255,0.1);
-  padding: 10px 16px;
-  height: 80px;
-  flex-shrink: 0;
-  z-index: 900;
-}
-
-/* Slider section */
-#fc-slider-section {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-}
-
-#fc-time-label {
-  font-size: 0.78rem;
+  gap: 10px;
+  padding: 24px 16px;
   color: #bdbdbd;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  font-size: 0.85rem;
 }
 
-#fc-time-slider {
-  width: 100%;
-  accent-color: #26a69a;
-  cursor: pointer;
+/* Scrollable table area */
+
+#fc-forecast-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  flex: 1;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.2) transparent;
 }
 
-/* Colorbar section */
-#fc-colorbar-section {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 3px;
-  flex-shrink: 0;
-  width: 260px;
+#fc-forecast-scroll::-webkit-scrollbar {
+  height: 6px;
 }
-
-#fc-colorbar-canvas {
+#fc-forecast-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+#fc-forecast-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.2);
   border-radius: 3px;
-  display: block;
 }
 
-#fc-colorbar-ticks {
-  display: flex;
-  justify-content: space-between;
-  width: 260px;
-  font-size: 0.68rem;
+/* ── Forecast table ─────────────────────────────────────────────────────── */
+
+#fc-forecast-table {
+  border-collapse: collapse;
+  white-space: nowrap;
+  width: max-content;
+}
+
+#fc-forecast-table td {
+  padding: 5px 0;
+  text-align: center;
+  font-size: 0.78rem;
+  color: #e0e0e0;
+  min-width: 44px;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+
+/* Fixed label column */
+
+.fc-label {
+  position: sticky;
+  left: 0;
+  z-index: 10;
+  background: rgba(18, 18, 18, 0.98);
+  padding: 5px 12px !important;
+  text-align: right !important;
+  font-weight: 600;
   color: #9e9e9e;
+  white-space: nowrap;
+  min-width: 72px !important;
+  border-right: 1px solid rgba(255,255,255,0.08);
+  font-size: 0.72rem !important;
 }
 
-#fc-colorbar-unit {
+/* Day header row */
+
+.fc-row-days td {
+  border-bottom: 2px solid rgba(255,255,255,0.12) !important;
+}
+
+.fc-day-cell {
+  font-weight: 700;
+  color: #ffffff !important;
+  font-size: 0.82rem !important;
+  letter-spacing: 0.02em;
+}
+
+/* Hours row */
+
+.fc-row-hours td {
+  font-size: 0.72rem !important;
+  color: #bdbdbd !important;
+  padding: 3px 0 !important;
+}
+
+/* Icon row */
+
+.fc-row-icons td {
+  font-size: 1.05rem !important;
+  padding: 2px 0 !important;
+  line-height: 1.2;
+}
+
+/* Temperature row */
+
+.fc-temp-cell {
+  font-weight: 700 !important;
+  font-size: 0.82rem !important;
+}
+
+/* Rain row */
+
+.fc-rain-cell {
+  font-size: 0.72rem !important;
+}
+
+/* Wind row */
+
+.fc-wind-cell {
+  vertical-align: middle;
+}
+
+.fc-wind-cell svg {
+  display: block;
+  margin: 0 auto 1px;
+}
+
+.fc-wind-cell span {
+  display: block;
   font-size: 0.68rem;
-  color: #757575;
-  align-self: flex-end;
+  color: #bdbdbd;
 }
 
-/* ── Responsive: narrow screens stack colorbar below slider ─────────────── */
+/* ── Responsive ─────────────────────────────────────────────────────────── */
 
 @media (max-width: 640px) {
-  #fc-bottom-bar {
-    flex-direction: column;
-    height: auto;
-    padding: 10px 12px;
-    gap: 8px;
+  #fc-info-box {
+    max-width: 220px;
+    padding: 8px 10px;
   }
-  #fc-colorbar-section {
-    width: 100%;
+  #fc-forecast-panel {
+    max-height: 60vh;
   }
-  #fc-colorbar-canvas {
-    width: 100%;
-  }
-  #fc-colorbar-ticks {
-    width: 100%;
-  }
-  #fc-chart-panel {
-    width: 100%;
-    left: 0;
-    right: 0;
-    bottom: 130px;
-    top: auto;
-    height: 220px;
+  #fc-forecast-table td {
+    min-width: 38px;
   }
 }
