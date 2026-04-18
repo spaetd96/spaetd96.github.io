@@ -10,27 +10,31 @@ const MODELS = {
     resource: 'nwp-v1-1h-2500m',
     label:    'AROME NWP',
     desc:     '1-hour steps · 60-hour horizon · 2.5 km resolution',
-    params:   't2m,rr_acc,u10m,v10m,tcc',
+    params:   't2m,rr_acc,u10m,v10m,tcc,ugust,vgust',
     dataUrl:  'https://data.hub.geosphere.at/dataset/nwp-v1-1h-2500m',
     doi:      '10.60669/9zm8-s664',
     doiUrl:   'https://doi.org/10.60669/9zm8-s664',
     hasCloudCover: true,
     accumulated:   true,
     hasUV:         true,
+    hasUVgust:     true,
   },
   inca: {
     resource: 'nowcast-v1-15min-1km',
     label:    'INCA Nowcast',
     desc:     '15-minute steps · 3-hour horizon · 1 km resolution',
-    params:   't2m,rr,ff,dd',
+    params:   't2m,rr,ff,dd,fx',
     dataUrl:  'https://data.hub.geosphere.at/dataset/nowcast-v1-15min-1km',
     doi:      '10.60669/ahad-4y43',
     doiUrl:   'https://doi.org/10.60669/ahad-4y43',
     hasCloudCover: false,
     accumulated:   false,
     hasUV:         false,
+    hasUVgust:     false,
   },
 };
+
+const MS_TO_KT = 1.94384;
 
 // Temperature colour stops (value → [r,g,b])
 const TEMP_STOPS = [
@@ -53,7 +57,7 @@ const WIND_STOPS = [
 
 // ── State ────────────────────────────────────────────────────────────────────
 
-let map, pinMarker = null, currentModel = 'arome';
+let map, pinMarker = null, currentModel = 'arome', windUnit = 'ms';
 
 // ── Init ─────────────────────────────────────────────────────────────────────
 
@@ -100,6 +104,17 @@ function initControls() {
     document.getElementById('fc-forecast-panel').classList.add('hidden');
     if (pinMarker) { pinMarker.remove(); pinMarker = null; }
     document.getElementById('fc-click-hint').classList.remove('hidden');
+  });
+
+  document.getElementById('fc-unit-toggle').addEventListener('click', () => {
+    windUnit = windUnit === 'ms' ? 'kt' : 'ms';
+    document.getElementById('fc-unit-toggle').textContent = windUnit === 'ms' ? 'm/s' : 'kt';
+    // Re-render table if forecast is loaded
+    const scroll = document.getElementById('fc-forecast-scroll');
+    if (!scroll.classList.contains('hidden') && pinMarker) {
+      const ll = pinMarker.getLatLng();
+      fetchAndShowForecast(ll.lat, ll.lng);
+    }
   });
 }
 
@@ -191,15 +206,27 @@ function processTimeseries(json) {
     windDir   = p.dd ? p.dd.data : [];
   }
 
+  let gustSpeed = null;
+  if (m.hasUVgust && p.ugust && p.vgust) {
+    const ug = p.ugust.data;
+    const vg = p.vgust.data;
+    gustSpeed = ug.map((ui, i) => Math.sqrt(ui * ui + vg[i] * vg[i]));
+  } else if (!m.hasUVgust && p.fx) {
+    gustSpeed = p.fx.data;
+  }
+
   const cloudCover = m.hasCloudCover && p.tcc ? p.tcc.data : null;
 
-  return { times: timestamps, temp, rain, windSpeed, windDir, cloudCover };
+  return { times: timestamps, temp, rain, windSpeed, windDir, gustSpeed, cloudCover };
 }
 
 // ── Render Windy-style forecast table ────────────────────────────────────────
 
 function renderForecastTable(data) {
-  const { times, temp, rain, windSpeed, windDir, cloudCover } = data;
+  const { times, temp, rain, windSpeed, windDir, gustSpeed, cloudCover } = data;
+  const useKt = windUnit === 'kt';
+  const unitLabel = useKt ? 'kt' : 'm/s';
+  const toUnit = v => isFinite(v) ? (useKt ? v * MS_TO_KT : v) : v;
   const n = times.length;
   const table = document.getElementById('fc-forecast-table');
   table.innerHTML = '';
@@ -309,7 +336,7 @@ function renderForecastTable(data) {
   windRow.className = 'fc-row-wind';
   const windLabel = document.createElement('td');
   windLabel.className = 'fc-label';
-  windLabel.innerHTML = 'Wind&nbsp;m/s';
+  windLabel.innerHTML = `Wind&nbsp;${unitLabel}`;
   windRow.appendChild(windLabel);
   for (let i = 0; i < n; i++) {
     const td = document.createElement('td');
@@ -319,12 +346,33 @@ function renderForecastTable(data) {
     if (isFinite(speed)) {
       td.appendChild(windArrowSVG(speed, dir));
       const span = document.createElement('span');
-      span.textContent = Math.round(speed);
+      span.textContent = Math.round(toUnit(speed));
       td.appendChild(span);
     }
     windRow.appendChild(td);
   }
   table.appendChild(windRow);
+
+  // ── Row 7: Wind gusts ──
+  if (gustSpeed) {
+    const gustRow = document.createElement('tr');
+    gustRow.className = 'fc-row-gusts';
+    const gustLabel = document.createElement('td');
+    gustLabel.className = 'fc-label';
+    gustLabel.innerHTML = `Gusts&nbsp;${unitLabel}`;
+    gustRow.appendChild(gustLabel);
+    for (let i = 0; i < n; i++) {
+      const td = document.createElement('td');
+      td.className = 'fc-gust-cell';
+      const gust = gustSpeed[i];
+      if (isFinite(gust) && gust > 0) {
+        td.textContent = Math.round(toUnit(gust));
+        td.style.color = windColor(gust);
+      }
+      gustRow.appendChild(td);
+    }
+    table.appendChild(gustRow);
+  }
 }
 
 // ── Weather icon helper ──────────────────────────────────────────────────────

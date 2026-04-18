@@ -153,6 +153,28 @@
   flex-shrink: 0;
 }
 
+#fc-forecast-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#fc-unit-toggle {
+  background: rgba(38, 166, 154, 0.15);
+  border: 1px solid rgba(38, 166, 154, 0.5);
+  border-radius: 4px;
+  color: #80cbc4;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 2px 8px;
+  line-height: 1.4;
+}
+#fc-unit-toggle:hover {
+  background: rgba(38, 166, 154, 0.3);
+  color: #fff;
+}
+
 #fc-forecast-location {
   font-size: 0.82rem;
   color: #80cbc4;
@@ -298,6 +320,14 @@
   display: block;
   font-size: 0.68rem;
   color: #bdbdbd;
+}
+
+/* Gust row */
+
+.fc-gust-cell {
+  font-size: 0.72rem !important;
+  font-weight: 600;
+  opacity: 0.85;
 }
 
 /* ── Responsive ─────────────────────────────────────────────────────────── */
