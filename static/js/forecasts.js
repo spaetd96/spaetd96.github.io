@@ -5,6 +5,16 @@
 
 const API_BASE    = 'https://dataset.api.hub.geosphere.at/v1';
 const RESOURCE    = 'nowcast-v1-15min-1km';
+
+// ── Eager preloads — start BEFORE DOM is ready ──────────────────────────────
+// netcdfjs module download (~200 KB) and metadata API call run in parallel
+// with page rendering, saving 1-2 s each.
+const _netcdf = import('https://esm.sh/netcdfjs@2.0.0');
+let _metaCache = null;  // filled by prefetch, consumed by loadForecast
+const _metaPrefetch = fetch(`${API_BASE}/grid/forecast/${RESOURCE}/metadata`)
+  .then(r => r.json())
+  .then(m => { _metaCache = m; return m; })
+  .catch(() => null);
 const BBOX        = [[45.5028, 8.0981], [49.4782, 17.7423]];  // [[S,W],[N,E]] WGS84
 const BBOX_PARAM  = '45.5028,8.0981,49.4782,17.7423';
 const ARROW_STRIDE = 14;
@@ -162,42 +172,80 @@ async function loadForecast(variable) {
   if (arrowLayerObj) { arrowLayerObj.remove();  arrowLayerObj = null; }
 
   try {
-    const meta = await fetchJSON(`${API_BASE}/grid/forecast/${RESOURCE}/metadata`);
+    // 1. Get metadata (likely already cached from prefetch)
+    const meta = _metaCache || await _metaPrefetch || await fetchJSON(`${API_BASE}/grid/forecast/${RESOURCE}/metadata`);
     const reftime = meta.last_forecast_reftime;
     buildTimestamps(reftime, meta.forecast_length);
     updateInfoBox(variable, reftime);
 
     const params = variable === 'ff' ? 'ff,dd' : variable;
-    const url  = `${API_BASE}/grid/forecast/${RESOURCE}` +
-                 `?parameters=${params}&bbox=${BBOX_PARAM}&output_format=netcdf`;
 
-    const buffer = await fetchBinary(url);
-    const parsed = await tryParseNetCDF(buffer, variable);
+    // 2. Phase 1: fetch ONLY the first timestep — ~1/13th the data, much faster
+    const t0Url = `${API_BASE}/grid/forecast/${RESOURCE}` +
+                  `?parameters=${params}&bbox=${BBOX_PARAM}&output_format=netcdf` +
+                  `&start=${encodeURIComponent(reftime)}&end=${encodeURIComponent(reftime)}`;
 
-    if (parsed) {
-      gridCache    = parsed;
-      windDirCache = parsed.dirData || null;
+    const t0Buf = await fetchBinary(t0Url);
+    const t0    = await tryParseNetCDF(t0Buf, variable);
+
+    if (t0) {
+      gridCache    = t0;
+      windDirCache = t0.dirData || null;
     } else {
       gridCache    = await fetchGeoJSONSlice(variable, 0);
       windDirCache = null;
     }
 
+    // 3. Render and show T0 immediately — user sees data NOW
     currentTimestep = 0;
     document.getElementById('fc-time-slider').value = 0;
-
-    // preRenderAll shows T0 immediately and releases the loading spinner;
-    // remaining timesteps are rendered in the background.
-    preRenderAll(variable);   // intentionally NOT awaited
+    imageDataCache[0] = renderSliceToImageData(0, variable);
+    if (variable === 'ff' && windDirCache) {
+      arrowDataCache[0] = renderArrowsToImageData(0);
+    }
+    showTimestep(0);
+    updateTimeLabel();
     drawColorbar(variable);
+    setLoading(false);  // spinner gone, data visible
+
+    // 4. Phase 2: fetch ALL timesteps in the background
+    fetchRemainingTimesteps(variable, params);
   } catch (err) {
     console.error('Forecast load error:', err);
     setLoading(false);
   }
 }
 
+// Background: fetch full 13-timestep NetCDF, parse, render all frames.
+async function fetchRemainingTimesteps(variable, params) {
+  try {
+    const fullUrl = `${API_BASE}/grid/forecast/${RESOURCE}` +
+                    `?parameters=${params}&bbox=${BBOX_PARAM}&output_format=netcdf`;
+    const fullBuf = await fetchBinary(fullUrl);
+    const full    = await tryParseNetCDF(fullBuf, variable);
+    if (!full) return;
+
+    gridCache    = full;
+    windDirCache = full.dirData || null;
+
+    const nt = full.data3d.length;
+    for (let t = 0; t < nt; t++) {
+      imageDataCache[t] = renderSliceToImageData(t, variable);
+      if (variable === 'ff' && windDirCache) {
+        arrowDataCache[t] = renderArrowsToImageData(t);
+      }
+      if (t > 0) await yieldFrame();
+    }
+    // Refresh current view with potentially updated T0 from full dataset
+    showTimestep(currentTimestep);
+  } catch (err) {
+    console.error('Background fetch error:', err);
+  }
+}
+
 async function tryParseNetCDF(buffer, variable) {
   try {
-    const { NetCDFReader } = await import('https://esm.sh/netcdfjs@2.0.0');
+    const { NetCDFReader } = await _netcdf;
     const reader = new NetCDFReader(buffer);
     const varObj = reader.getDataVariable(variable);
     if (!varObj) return null;
@@ -281,29 +329,6 @@ async function fetchGeoJSONSlice(variable, timestepIndex) {
 }
 
 // ── Rendering ────────────────────────────────────────────────────────────────
-
-// Pre-render T0 immediately, release spinner, then silently render remaining frames.
-async function preRenderAll(variable) {
-  const nt = gridCache.data3d.length;
-
-  // Render and display T0 right away — user sees data as soon as this completes
-  imageDataCache[0] = renderSliceToImageData(0, variable);
-  if (variable === 'ff' && windDirCache) {
-    arrowDataCache[0] = renderArrowsToImageData(0);
-  }
-  showTimestep(0);
-  updateTimeLabel();
-  setLoading(false);   // <-- release controls NOW
-
-  // Render the remaining timesteps one per animation frame so the page stays responsive
-  for (let t = 1; t < nt; t++) {
-    await yieldFrame();
-    imageDataCache[t] = renderSliceToImageData(t, variable);
-    if (variable === 'ff' && windDirCache) {
-      arrowDataCache[t] = renderArrowsToImageData(t);
-    }
-  }
-}
 
 // Build a 256-entry RGB lookup table for a given colour stop array (avoids
 // calling interpolateColor for every pixel — big speedup for 172K cells).
