@@ -49,20 +49,58 @@ const VAR_META = {
   },
 };
 
+// ── Custom Leaflet raster layer — draws ImageData directly, zero encoding ────
+
+const RasterLayer = L.Layer.extend({
+  initialize(bounds, opacity) {
+    this._latlngBounds = L.latLngBounds(bounds);
+    this._opacity = (opacity !== undefined) ? opacity : 0.85;
+    this._canvas  = document.createElement('canvas');
+    this._ctx     = this._canvas.getContext('2d');
+    this._canvas.style.cssText = 'position:absolute;pointer-events:none;';
+    this._canvas.style.opacity = String(this._opacity);
+  },
+  onAdd(map) {
+    this._map = map;
+    map.getPanes().overlayPane.appendChild(this._canvas);
+    map.on('zoom viewreset moveend', this._reposition, this);
+    this._reposition();
+    return this;
+  },
+  onRemove(map) {
+    if (this._canvas.parentNode) this._canvas.parentNode.removeChild(this._canvas);
+    map.off('zoom viewreset moveend', this._reposition, this);
+    return this;
+  },
+  _reposition() {
+    const nw = this._map.latLngToLayerPoint(this._latlngBounds.getNorthWest());
+    const se = this._map.latLngToLayerPoint(this._latlngBounds.getSouthEast());
+    L.DomUtil.setPosition(this._canvas, nw);
+    this._canvas.style.width  = (se.x - nw.x) + 'px';
+    this._canvas.style.height = (se.y - nw.y) + 'px';
+  },
+  putFrame(imageData) {
+    if (this._canvas.width  !== imageData.width)  this._canvas.width  = imageData.width;
+    if (this._canvas.height !== imageData.height) this._canvas.height = imageData.height;
+    this._ctx.putImageData(imageData, 0, 0);
+    this._reposition();
+  },
+});
+
 // ── State ────────────────────────────────────────────────────────────────────
 
 let map;
-let overlayLayer      = null;
-let arrowOverlay      = null;
-let pinMarker         = null;
-let chartInstance     = null;
-let gridCache         = null;    // { variable, data3d, nx, ny, missing, dirData }
-let windDirCache      = null;    // Float32 slices for dd per timestep
-let preRendered       = [];      // Blob URLs for raster overlays (one per timestep)
-let preRenderedArrows = [];      // Blob URLs for wind arrow overlays
-let timestamps        = [];      // ISO strings for each timestep
-let currentTimestep   = 0;
-let currentVar        = 't2m';
+let rasterLayer     = null;   // RasterLayer instance for variable raster
+let arrowLayerObj   = null;   // RasterLayer instance for wind arrows
+let pinMarker       = null;
+let chartInstance   = null;
+let gridCache       = null;   // { variable, data3d, nx, ny, missing, dirData }
+let windDirCache    = null;   // typed array slices for dd per timestep
+let imageDataCache  = [];     // ImageData per timestep (main raster)
+let arrowDataCache  = [];     // ImageData per timestep (wind arrows)
+let timestamps      = [];     // ISO strings for each timestep
+let currentTimestep = 0;
+let currentVar      = 't2m';
 
 // ── Initialise ───────────────────────────────────────────────────────────────
 
@@ -118,19 +156,17 @@ function initControls() {
 
 async function loadForecast(variable) {
   setLoading(true);
-  // Free old Blob URLs
-  preRendered.forEach(u => URL.revokeObjectURL(u));
-  preRenderedArrows.forEach(u => URL.revokeObjectURL(u));
-  preRendered = [];
-  preRenderedArrows = [];
+  imageDataCache = [];
+  arrowDataCache = [];
+  if (rasterLayer)   { rasterLayer.remove();   rasterLayer   = null; }
+  if (arrowLayerObj) { arrowLayerObj.remove();  arrowLayerObj = null; }
+
   try {
-    // 1. Fetch metadata for latest reference time
     const meta = await fetchJSON(`${API_BASE}/grid/forecast/${RESOURCE}/metadata`);
     const reftime = meta.last_forecast_reftime;
     buildTimestamps(reftime, meta.forecast_length);
     updateInfoBox(variable, reftime);
 
-    // 2. Fetch NetCDF (ff,dd together for wind)
     const params = variable === 'ff' ? 'ff,dd' : variable;
     const url  = `${API_BASE}/grid/forecast/${RESOURCE}` +
                  `?parameters=${params}&bbox=${BBOX_PARAM}&output_format=netcdf`;
@@ -148,13 +184,13 @@ async function loadForecast(variable) {
 
     currentTimestep = 0;
     document.getElementById('fc-time-slider').value = 0;
-    await preRenderAll(variable);
-    showTimestep(0);
+
+    // preRenderAll shows T0 immediately and releases the loading spinner;
+    // remaining timesteps are rendered in the background.
+    preRenderAll(variable);   // intentionally NOT awaited
     drawColorbar(variable);
-    updateTimeLabel();
   } catch (err) {
     console.error('Forecast load error:', err);
-  } finally {
     setLoading(false);
   }
 }
@@ -246,56 +282,81 @@ async function fetchGeoJSONSlice(variable, timestepIndex) {
 
 // ── Rendering ────────────────────────────────────────────────────────────────
 
-// Pre-render all timesteps to Blob URLs once after data loads
+// Pre-render T0 immediately, release spinner, then silently render remaining frames.
 async function preRenderAll(variable) {
   const nt = gridCache.data3d.length;
-  for (let t = 0; t < nt; t++) {
-    preRendered[t] = await renderSliceToURL(t, variable);
-    if (variable === 'ff' && windDirCache) {
-      preRenderedArrows[t] = await renderArrowsToURL(t);
-    }
+
+  // Render and display T0 right away — user sees data as soon as this completes
+  imageDataCache[0] = renderSliceToImageData(0, variable);
+  if (variable === 'ff' && windDirCache) {
+    arrowDataCache[0] = renderArrowsToImageData(0);
+  }
+  showTimestep(0);
+  updateTimeLabel();
+  setLoading(false);   // <-- release controls NOW
+
+  // Render the remaining timesteps one per animation frame so the page stays responsive
+  for (let t = 1; t < nt; t++) {
     await yieldFrame();
+    imageDataCache[t] = renderSliceToImageData(t, variable);
+    if (variable === 'ff' && windDirCache) {
+      arrowDataCache[t] = renderArrowsToImageData(t);
+    }
   }
 }
 
-async function renderSliceToURL(t, variable) {
+// Build a 256-entry RGB lookup table for a given colour stop array (avoids
+// calling interpolateColor for every pixel — big speedup for 172K cells).
+function buildColorLUT(stops) {
+  const lut = new Uint8Array(256 * 3);
+  for (let i = 0; i < 256; i++) {
+    const [r, g, b] = interpolateColor(stops, i / 255);
+    lut[i * 3]     = r;
+    lut[i * 3 + 1] = g;
+    lut[i * 3 + 2] = b;
+  }
+  return lut;
+}
+
+// Synchronous: pixel math only, no canvas encoding — returns ImageData directly.
+function renderSliceToImageData(t, variable) {
   const { data3d, nx, ny, missing } = gridCache;
   const slice = data3d[Math.min(t, data3d.length - 1)];
   const meta  = VAR_META[variable];
+  const lut   = buildColorLUT(meta.stops);
+  const range = meta.max - meta.min;
 
-  const oc  = new OffscreenCanvas(nx, ny);
-  const ctx = oc.getContext('2d');
-  const img = ctx.createImageData(nx, ny);
+  const imgData = new ImageData(nx, ny);
+  const d = imgData.data;
 
   for (let i = 0; i < ny * nx; i++) {
     const val = slice[i];
-    const isMissing = (missing !== null && val === missing) || !isFinite(val);
     const idx = i * 4;
-    if (isMissing) {
-      img.data[idx + 3] = 0;
+    if ((missing !== null && val === missing) || !isFinite(val)) {
+      d[idx + 3] = 0;
     } else {
-      const frac = Math.max(0, Math.min(1, (val - meta.min) / (meta.max - meta.min)));
-      const [r, g, b] = interpolateColor(meta.stops, frac);
-      img.data[idx]     = r;
-      img.data[idx + 1] = g;
-      img.data[idx + 2] = b;
-      img.data[idx + 3] = 200;
+      const frac = Math.max(0, Math.min(1, (val - meta.min) / range));
+      const li   = Math.round(frac * 255) * 3;
+      d[idx]     = lut[li];
+      d[idx + 1] = lut[li + 1];
+      d[idx + 2] = lut[li + 2];
+      d[idx + 3] = 200;
     }
   }
-
-  ctx.putImageData(img, 0, 0);
-  const blob = await oc.convertToBlob({ type: 'image/png' });
-  return URL.createObjectURL(blob);
+  return imgData;
 }
 
-async function renderArrowsToURL(t) {
+// Synchronous: draw arrows on a hidden canvas, read back pixels via getImageData.
+function renderArrowsToImageData(t) {
   const { nx, ny } = gridCache;
   const ffSlice = gridCache.data3d[Math.min(t, gridCache.data3d.length - 1)];
   const ddSlice = windDirCache[Math.min(t, windDirCache.length - 1)];
   const meta    = VAR_META['ff'];
 
-  const oc  = new OffscreenCanvas(nx, ny);
-  const ctx = oc.getContext('2d');
+  const canvas = document.createElement('canvas');
+  canvas.width  = nx;
+  canvas.height = ny;
+  const ctx = canvas.getContext('2d');
 
   const stride   = ARROW_STRIDE;
   const arrowLen = stride * 0.7;
@@ -313,7 +374,6 @@ async function renderArrowsToURL(t) {
       ctx.fillStyle   = `rgb(${r},${g},${b})`;
       ctx.lineWidth   = 1.4;
 
-      // Meteorological convention: direction is FROM; arrow points TO opposite
       const toRad = ((dir + 180) % 360) * Math.PI / 180;
       const dx = Math.sin(toRad) * arrowLen / 2;
       const dy = -Math.cos(toRad) * arrowLen / 2;
@@ -326,45 +386,38 @@ async function renderArrowsToURL(t) {
       ctx.lineTo(hx, hy);
       ctx.stroke();
 
-      // Arrowhead
-      const headLen  = arrowLen * 0.35;
-      const backAng  = 0.45;
-      const angle    = Math.atan2(hy - ty, hx - tx);
+      const headLen = arrowLen * 0.35;
+      const backAng = 0.45;
+      const angle   = Math.atan2(hy - ty, hx - tx);
       ctx.beginPath();
       ctx.moveTo(hx, hy);
-      ctx.lineTo(
-        hx - headLen * Math.cos(angle - backAng),
-        hy - headLen * Math.sin(angle - backAng),
-      );
-      ctx.lineTo(
-        hx - headLen * Math.cos(angle + backAng),
-        hy - headLen * Math.sin(angle + backAng),
-      );
+      ctx.lineTo(hx - headLen * Math.cos(angle - backAng), hy - headLen * Math.sin(angle - backAng));
+      ctx.lineTo(hx - headLen * Math.cos(angle + backAng), hy - headLen * Math.sin(angle + backAng));
       ctx.closePath();
       ctx.fill();
     }
   }
 
-  const blob = await oc.convertToBlob({ type: 'image/png' });
-  return URL.createObjectURL(blob);
+  return ctx.getImageData(0, 0, nx, ny);
 }
 
 function showTimestep(t) {
-  if (!preRendered[t]) return;
-  if (overlayLayer) {
-    overlayLayer.setUrl(preRendered[t]);
-  } else {
-    overlayLayer = L.imageOverlay(preRendered[t], BBOX, { opacity: 0.85, zIndex: 410 }).addTo(map);
+  const imgData = imageDataCache[t];
+  if (!imgData) return;
+
+  if (!rasterLayer) {
+    rasterLayer = new RasterLayer(BBOX, 0.85).addTo(map);
   }
-  if (currentVar === 'ff' && preRenderedArrows[t]) {
-    if (arrowOverlay) {
-      arrowOverlay.setUrl(preRenderedArrows[t]);
-    } else {
-      arrowOverlay = L.imageOverlay(preRenderedArrows[t], BBOX, { opacity: 1.0, zIndex: 420 }).addTo(map);
+  rasterLayer.putFrame(imgData);
+
+  if (currentVar === 'ff' && arrowDataCache[t]) {
+    if (!arrowLayerObj) {
+      arrowLayerObj = new RasterLayer(BBOX, 1.0).addTo(map);
     }
-  } else if (currentVar !== 'ff' && arrowOverlay) {
-    arrowOverlay.remove();
-    arrowOverlay = null;
+    arrowLayerObj.putFrame(arrowDataCache[t]);
+  } else if (currentVar !== 'ff' && arrowLayerObj) {
+    arrowLayerObj.remove();
+    arrowLayerObj = null;
   }
 }
 
