@@ -446,7 +446,26 @@ function processEnsembleTimeseries(json) {
   const windP50 = u50.map((u, i) => Math.sqrt(u * u + v50[i] * v50[i]));
   const windP90 = u90.map((u, i) => Math.sqrt(u * u + v90[i] * v90[i]));
 
-  return { isEnsemble: true, times: timestamps, tempP10, tempP50, tempP90, rainP10, rainP50, rainP90, windP10, windP50, windP90 };
+  // Wind direction (meteorological: where wind comes FROM), derived from p50 u/v
+  // Use p10/p50/p90 u+v pairs to get corresponding directions; unwrap to avoid 0/360 jumps
+  const uvToDeg = (u, v) => (Math.atan2(-u, -v) * 180 / Math.PI + 360) % 360;
+  const unwrap = arr => {
+    const out = [...arr];
+    for (let i = 1; i < out.length; i++) {
+      let diff = out[i] - out[i - 1];
+      if (diff > 180)  out[i] -= 360;
+      if (diff < -180) out[i] += 360;
+    }
+    return out;
+  };
+  const dirP10Raw = u10.map((u, i) => uvToDeg(u, v10[i]));
+  const dirP50Raw = u50.map((u, i) => uvToDeg(u, v50[i]));
+  const dirP90Raw = u90.map((u, i) => uvToDeg(u, v90[i]));
+  const dirP10 = unwrap(dirP10Raw);
+  const dirP50 = unwrap(dirP50Raw);
+  const dirP90 = unwrap(dirP90Raw);
+
+  return { isEnsemble: true, times: timestamps, tempP10, tempP50, tempP90, rainP10, rainP50, rainP90, windP10, windP50, windP90, dirP10, dirP50, dirP90 };
 }
 
 // ── Render ensemble uncertainty charts ───────────────────────────────────────
@@ -481,22 +500,43 @@ function renderEnsembleCharts(data) {
     color: '#80cbc4', bandFill: null,
     yMin0: true, yTickFmt: v => Math.round(v),
   }));
+
+  // Wind direction: use fixed 0–360 y-axis with compass labels
+  // Wrap unwrapped values back to 0–360 for display ticks
+  const compassFmt = v => {
+    const d = ((v % 360) + 360) % 360;
+    const dirs = ['N','NE','E','SE','S','SW','W','NW','N'];
+    return dirs[Math.round(d / 45) % 8];
+  };
+  container.appendChild(makeEnsembleChart({
+    title: 'Wind Direction', yUnit: '°',
+    times: data.times,
+    p10: data.dirP10, p50: data.dirP50, p90: data.dirP90,
+    color: '#ce93d8', bandFill: null,
+    yFixed: true, yLo: 0, yHi: 360,
+    yTickFmt: compassFmt,
+  }));
 }
 
-function makeEnsembleChart({ title, yUnit, times, p10, p50, p90, color, bandFill = null, yMin0 = false, yMinSpan = 0, yTickFmt = v => v }) {
+function makeEnsembleChart({ title, yUnit, times, p10, p50, p90, color, bandFill = null, yMin0 = false, yMinSpan = 0, yFixed = false, yLo: yLoFixed = 0, yHi: yHiFixed = 360, yTickFmt = v => v }) {
   const W = 700, H = 155;
   const ML = 46, MR = 50, MT = 22, MB = 32;
   const CW = W - ML - MR, CH = H - MT - MB;
   const n = times.length;
 
-  const allVals = [...p10, ...p50, ...p90].filter(isFinite);
-  const rawMin = Math.min(...allVals);
-  const rawMax = Math.max(...allVals);
-  const span = rawMax - rawMin || 1;
-  let yLo = yMin0 ? 0 : rawMin - span * 0.12;
-  let yHi = rawMax + span * 0.12;
-  if (yHi - yLo < yMinSpan) yHi = yLo + yMinSpan;
-  if (yHi <= yLo) { yLo -= 1; yHi += 1; }
+  let yLo, yHi;
+  if (yFixed) {
+    yLo = yLoFixed; yHi = yHiFixed;
+  } else {
+    const allVals = [...p10, ...p50, ...p90].filter(isFinite);
+    const rawMin = Math.min(...allVals);
+    const rawMax = Math.max(...allVals);
+    const span = rawMax - rawMin || 1;
+    yLo = yMin0 ? 0 : rawMin - span * 0.12;
+    yHi = rawMax + span * 0.12;
+    if (yHi - yLo < yMinSpan) yHi = yLo + yMinSpan;
+    if (yHi <= yLo) { yLo -= 1; yHi += 1; }
+  }
 
   const xOf = i => ML + (i / Math.max(n - 1, 1)) * CW;
   const clamp = v => Math.max(yLo, Math.min(yHi, v));
