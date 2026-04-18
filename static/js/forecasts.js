@@ -174,6 +174,8 @@ async function fetchAndShowForecast(lat, lng) {
   scroll.classList.add('hidden');
   ensembleScroll.classList.add('hidden');
 
+  const m   = MODELS[currentModel];
+
   // Toggle panel size class based on model type
   if (m.isEnsemble) {
     panel.classList.add('fc-panel-ensemble');
@@ -188,9 +190,8 @@ async function fetchAndShowForecast(lat, lng) {
   spinner.style.display = '';
 
   document.getElementById('fc-forecast-location').textContent =
-    `${lat.toFixed(3)}°N, ${lng.toFixed(3)}°E · ${MODELS[currentModel].label}`;
+    `${lat.toFixed(3)}°N, ${lng.toFixed(3)}°E · ${m.label}`;
 
-  const m   = MODELS[currentModel];
   const url = `${API_BASE}/timeseries/forecast/${m.resource}` +
               `?lat_lon=${lat.toFixed(4)},${lng.toFixed(4)}&parameters=${m.params}`;
 
@@ -477,12 +478,12 @@ function renderEnsembleCharts(data) {
     title: 'Wind Speed', yUnit: useKt ? 'kt' : 'm/s',
     times: data.times,
     p10: data.windP10.map(toWind), p50: data.windP50.map(toWind), p90: data.windP90.map(toWind),
-    color: '#80cbc4', bandFill: 'rgba(128,203,196,0.2)',
+    color: '#80cbc4', bandFill: null,
     yMin0: true, yTickFmt: v => Math.round(v),
   }));
 }
 
-function makeEnsembleChart({ title, yUnit, times, p10, p50, p90, color, bandFill, yMin0 = false, yTickFmt = v => v }) {
+function makeEnsembleChart({ title, yUnit, times, p10, p50, p90, color, bandFill = null, yMin0 = false, yTickFmt = v => v }) {
   const W = 700, H = 155;
   const ML = 46, MR = 50, MT = 22, MB = 32;
   const CW = W - ML - MR, CH = H - MT - MB;
@@ -555,16 +556,20 @@ function makeEnsembleChart({ title, yUnit, times, p10, p50, p90, color, bandFill
   // Helper: build SVG path string from a percentile array
   const mkPath = arr => 'M ' + arr.map((v, i) => `${xOf(i).toFixed(1)},${yOf(isFinite(v) ? clamp(v) : yLo).toFixed(1)}`).join(' L ');
 
-  // Shaded band: p10 (left→right) then p90 reversed (right→left)
-  const bandPts = [
-    ...p10.map((v, i) => `${xOf(i).toFixed(1)},${yOf(isFinite(v) ? clamp(v) : yLo).toFixed(1)}`),
-    ...[...p90].reverse().map((v, i) => `${xOf(n - 1 - i).toFixed(1)},${yOf(isFinite(v) ? clamp(v) : yLo).toFixed(1)}`),
-  ];
-  svg.appendChild(el('path', { d: `M ${bandPts.join(' L ')} Z`, fill: bandFill, stroke: 'none' }));
+  // Optional shaded band
+  if (bandFill) {
+    const bandPts = [
+      ...p10.map((v, i) => `${xOf(i).toFixed(1)},${yOf(isFinite(v) ? clamp(v) : yLo).toFixed(1)}`),
+      ...[...p90].reverse().map((v, i) => `${xOf(n - 1 - i).toFixed(1)},${yOf(isFinite(v) ? clamp(v) : yLo).toFixed(1)}`),
+    ];
+    svg.appendChild(el('path', { d: `M ${bandPts.join(' L ')} Z`, fill: bandFill, stroke: 'none' }));
+  }
 
-  // P10 / P90 dashed boundary lines
-  svg.appendChild(el('path', { d: mkPath(p10), fill: 'none', stroke: color, 'stroke-width': '0.7', 'stroke-opacity': '0.4', 'stroke-dasharray': '3,2' }));
-  svg.appendChild(el('path', { d: mkPath(p90), fill: 'none', stroke: color, 'stroke-width': '0.7', 'stroke-opacity': '0.4', 'stroke-dasharray': '3,2' }));
+  // P10 / P90 dashed lines
+  const dashOpacity = bandFill ? '0.4' : '0.75';
+  const dashWidth   = bandFill ? '0.7' : '1.2';
+  svg.appendChild(el('path', { d: mkPath(p10), fill: 'none', stroke: color, 'stroke-width': dashWidth, 'stroke-opacity': dashOpacity, 'stroke-dasharray': '4,3' }));
+  svg.appendChild(el('path', { d: mkPath(p90), fill: 'none', stroke: color, 'stroke-width': dashWidth, 'stroke-opacity': dashOpacity, 'stroke-dasharray': '4,3' }));
 
   // Median line (p50)
   svg.appendChild(el('path', { d: mkPath(p50), fill: 'none', stroke: color, 'stroke-width': '1.8', 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
