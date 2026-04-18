@@ -3,9 +3,11 @@
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const API_BASE   = 'https://dataset.api.hub.geosphere.at/v1';
-const RESOURCE   = 'nowcast-v1-15min-1km';
-const AUSTRIA_BOUNDS = [[45.5028, 8.0981], [49.4782, 17.7423]];  // SW, NE WGS84
+const API_BASE    = 'https://dataset.api.hub.geosphere.at/v1';
+const RESOURCE    = 'nowcast-v1-15min-1km';
+const BBOX        = [[45.5028, 8.0981], [49.4782, 17.7423]];  // [[S,W],[N,E]] WGS84
+const BBOX_PARAM  = '45.5028,8.0981,49.4782,17.7423';
+const ARROW_STRIDE = 14;
 
 const VAR_META = {
   t2m: {
@@ -50,13 +52,17 @@ const VAR_META = {
 // ── State ────────────────────────────────────────────────────────────────────
 
 let map;
-let overlayLayer    = null;
-let pinMarker       = null;
-let chartInstance   = null;
-let gridCache       = null;    // { variable, data3d, nx, ny, missing }
-let timestamps      = [];      // ISO strings for each timestep
-let currentTimestep = 0;
-let currentVar      = 't2m';
+let overlayLayer      = null;
+let arrowOverlay      = null;
+let pinMarker         = null;
+let chartInstance     = null;
+let gridCache         = null;    // { variable, data3d, nx, ny, missing, dirData }
+let windDirCache      = null;    // Float32 slices for dd per timestep
+let preRendered       = [];      // Blob URLs for raster overlays (one per timestep)
+let preRenderedArrows = [];      // Blob URLs for wind arrow overlays
+let timestamps        = [];      // ISO strings for each timestep
+let currentTimestep   = 0;
+let currentVar        = 't2m';
 
 // ── Initialise ───────────────────────────────────────────────────────────────
 
@@ -70,9 +76,14 @@ function initMap() {
   map = L.map('fc-map', {
     center: [47.5, 13.0],
     zoom: 7,
-    minZoom: 5,
+    minZoom: 7,
     maxZoom: 12,
+    zoomControl: false,
+    maxBounds: [[44.0, 6.0], [51.5, 20.5]],
+    maxBoundsViscosity: 1.0,
   });
+
+  L.control.zoom({ position: 'bottomright' }).addTo(map);
 
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
@@ -93,7 +104,7 @@ function initControls() {
 
   document.getElementById('fc-time-slider').addEventListener('input', (e) => {
     currentTimestep = parseInt(e.target.value, 10);
-    if (gridCache) renderOverlay(currentTimestep);
+    showTimestep(currentTimestep);
     updateTimeLabel();
   });
 
@@ -107,6 +118,11 @@ function initControls() {
 
 async function loadForecast(variable) {
   setLoading(true);
+  // Free old Blob URLs
+  preRendered.forEach(u => URL.revokeObjectURL(u));
+  preRenderedArrows.forEach(u => URL.revokeObjectURL(u));
+  preRendered = [];
+  preRenderedArrows = [];
   try {
     // 1. Fetch metadata for latest reference time
     const meta = await fetchJSON(`${API_BASE}/grid/forecast/${RESOURCE}/metadata`);
@@ -114,24 +130,26 @@ async function loadForecast(variable) {
     buildTimestamps(reftime, meta.forecast_length);
     updateInfoBox(variable, reftime);
 
-    // 2. Try NetCDF first; fall back to per-timestep GeoJSON if parsing fails
-    const bbox = '45.5,8.0981,49.4782,17.7423';
+    // 2. Fetch NetCDF (ff,dd together for wind)
+    const params = variable === 'ff' ? 'ff,dd' : variable;
     const url  = `${API_BASE}/grid/forecast/${RESOURCE}` +
-                 `?parameters=${variable}&bbox=${bbox}&output_format=netcdf`;
+                 `?parameters=${params}&bbox=${BBOX_PARAM}&output_format=netcdf`;
 
     const buffer = await fetchBinary(url);
     const parsed = await tryParseNetCDF(buffer, variable);
 
     if (parsed) {
-      gridCache = parsed;
+      gridCache    = parsed;
+      windDirCache = parsed.dirData || null;
     } else {
-      // Fallback: fetch GeoJSON for timestep 0 only
-      gridCache = await fetchGeoJSONSlice(variable, 0);
+      gridCache    = await fetchGeoJSONSlice(variable, 0);
+      windDirCache = null;
     }
 
     currentTimestep = 0;
     document.getElementById('fc-time-slider').value = 0;
-    renderOverlay(0);
+    await preRenderAll(variable);
+    showTimestep(0);
     drawColorbar(variable);
     updateTimeLabel();
   } catch (err) {
@@ -148,7 +166,6 @@ async function tryParseNetCDF(buffer, variable) {
     const varObj = reader.getDataVariable(variable);
     if (!varObj) return null;
 
-    // Dimensions: time × y × x  (or y × x if only one timestep)
     const dims = reader.variables.find(v => v.name === variable).dimensions;
     const dimSizes = dims.map(d => reader.dimensions.find(dim => dim.name === d).size);
 
@@ -160,20 +177,35 @@ async function tryParseNetCDF(buffer, variable) {
       [ny, nx] = dimSizes;
     }
 
-    // Locate fill/missing value
     const attrs = reader.variables.find(v => v.name === variable).attributes;
     const missingAttr = attrs.find(a => a.name === '_FillValue' || a.name === 'missing_value');
     const missing = missingAttr ? missingAttr.value : null;
 
-    // Build 3D array (nt × ny × nx)  flat Float32 slices
-    const flat = Array.from(varObj);
+    // Use subarray to avoid copying the full typed array
+    const flatSrc = varObj;
     const sliceSize = ny * nx;
     const data3d = [];
     for (let t = 0; t < nt; t++) {
-      data3d.push(flat.slice(t * sliceSize, (t + 1) * sliceSize));
+      data3d.push(flatSrc.subarray
+        ? flatSrc.subarray(t * sliceSize, (t + 1) * sliceSize)
+        : flatSrc.slice(t * sliceSize, (t + 1) * sliceSize));
     }
 
-    return { variable, data3d, nx, ny, missing };
+    // Parse wind direction (dd) when variable is ff
+    let dirData = null;
+    if (variable === 'ff') {
+      const ddObj = reader.getDataVariable('dd');
+      if (ddObj) {
+        dirData = [];
+        for (let t = 0; t < nt; t++) {
+          dirData.push(ddObj.subarray
+            ? ddObj.subarray(t * sliceSize, (t + 1) * sliceSize)
+            : ddObj.slice(t * sliceSize, (t + 1) * sliceSize));
+        }
+      }
+    }
+
+    return { variable, data3d, nx, ny, missing, dirData };
   } catch (e) {
     console.warn('NetCDF parse failed, will fall back to GeoJSON:', e.message);
     return null;
@@ -182,11 +214,10 @@ async function tryParseNetCDF(buffer, variable) {
 
 async function fetchGeoJSONSlice(variable, timestepIndex) {
   // Fetch single timestep as GeoJSON (fallback path)
-  const bbox  = '45.5,8.0981,49.4782,17.7423';
   const start = timestamps[timestepIndex];
   const end   = start;
   const url   = `${API_BASE}/grid/forecast/${RESOURCE}` +
-                `?parameters=${variable}&bbox=${bbox}&output_format=geojson` +
+                `?parameters=${variable}&bbox=${BBOX_PARAM}&output_format=geojson` +
                 `&start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`;
 
   const json = await fetchJSON(url);
@@ -215,18 +246,25 @@ async function fetchGeoJSONSlice(variable, timestepIndex) {
 
 // ── Rendering ────────────────────────────────────────────────────────────────
 
-function renderOverlay(timestepIndex) {
-  if (!gridCache) return;
+// Pre-render all timesteps to Blob URLs once after data loads
+async function preRenderAll(variable) {
+  const nt = gridCache.data3d.length;
+  for (let t = 0; t < nt; t++) {
+    preRendered[t] = await renderSliceToURL(t, variable);
+    if (variable === 'ff' && windDirCache) {
+      preRenderedArrows[t] = await renderArrowsToURL(t);
+    }
+    await yieldFrame();
+  }
+}
+
+async function renderSliceToURL(t, variable) {
   const { data3d, nx, ny, missing } = gridCache;
+  const slice = data3d[Math.min(t, data3d.length - 1)];
+  const meta  = VAR_META[variable];
 
-  // Choose slice; if only 1 timestep cached (GeoJSON fallback) always use 0
-  const slice = data3d[Math.min(timestepIndex, data3d.length - 1)];
-  const meta  = VAR_META[currentVar];
-
-  const canvas = document.createElement('canvas');
-  canvas.width  = nx;
-  canvas.height = ny;
-  const ctx = canvas.getContext('2d');
+  const oc  = new OffscreenCanvas(nx, ny);
+  const ctx = oc.getContext('2d');
   const img = ctx.createImageData(nx, ny);
 
   for (let i = 0; i < ny * nx; i++) {
@@ -234,25 +272,104 @@ function renderOverlay(timestepIndex) {
     const isMissing = (missing !== null && val === missing) || !isFinite(val);
     const idx = i * 4;
     if (isMissing) {
-      img.data[idx + 3] = 0;   // transparent
+      img.data[idx + 3] = 0;
     } else {
-      const t = Math.max(0, Math.min(1, (val - meta.min) / (meta.max - meta.min)));
-      const [r, g, b] = interpolateColor(meta.stops, t);
+      const frac = Math.max(0, Math.min(1, (val - meta.min) / (meta.max - meta.min)));
+      const [r, g, b] = interpolateColor(meta.stops, frac);
       img.data[idx]     = r;
       img.data[idx + 1] = g;
       img.data[idx + 2] = b;
-      img.data[idx + 3] = 200;  // semi-transparent
+      img.data[idx + 3] = 200;
     }
   }
 
   ctx.putImageData(img, 0, 0);
-  const dataURL = canvas.toDataURL();
+  const blob = await oc.convertToBlob({ type: 'image/png' });
+  return URL.createObjectURL(blob);
+}
 
-  if (overlayLayer) {
-    overlayLayer.setUrl(dataURL);
-  } else {
-    overlayLayer = L.imageOverlay(dataURL, AUSTRIA_BOUNDS, { opacity: 0.85 }).addTo(map);
+async function renderArrowsToURL(t) {
+  const { nx, ny } = gridCache;
+  const ffSlice = gridCache.data3d[Math.min(t, gridCache.data3d.length - 1)];
+  const ddSlice = windDirCache[Math.min(t, windDirCache.length - 1)];
+  const meta    = VAR_META['ff'];
+
+  const oc  = new OffscreenCanvas(nx, ny);
+  const ctx = oc.getContext('2d');
+
+  const stride   = ARROW_STRIDE;
+  const arrowLen = stride * 0.7;
+
+  for (let row = Math.floor(stride / 2); row < ny; row += stride) {
+    for (let col = Math.floor(stride / 2); col < nx; col += stride) {
+      const i     = row * nx + col;
+      const speed = ffSlice[i];
+      const dir   = ddSlice ? ddSlice[i] : NaN;
+      if (!isFinite(speed) || !isFinite(dir) || speed < 0.3) continue;
+
+      const frac = Math.max(0, Math.min(1, speed / meta.max));
+      const [r, g, b] = interpolateColor(meta.stops, frac);
+      ctx.strokeStyle = `rgb(${r},${g},${b})`;
+      ctx.fillStyle   = `rgb(${r},${g},${b})`;
+      ctx.lineWidth   = 1.4;
+
+      // Meteorological convention: direction is FROM; arrow points TO opposite
+      const toRad = ((dir + 180) % 360) * Math.PI / 180;
+      const dx = Math.sin(toRad) * arrowLen / 2;
+      const dy = -Math.cos(toRad) * arrowLen / 2;
+
+      const tx = col - dx;  const ty = row - dy;
+      const hx = col + dx;  const hy = row + dy;
+
+      ctx.beginPath();
+      ctx.moveTo(tx, ty);
+      ctx.lineTo(hx, hy);
+      ctx.stroke();
+
+      // Arrowhead
+      const headLen  = arrowLen * 0.35;
+      const backAng  = 0.45;
+      const angle    = Math.atan2(hy - ty, hx - tx);
+      ctx.beginPath();
+      ctx.moveTo(hx, hy);
+      ctx.lineTo(
+        hx - headLen * Math.cos(angle - backAng),
+        hy - headLen * Math.sin(angle - backAng),
+      );
+      ctx.lineTo(
+        hx - headLen * Math.cos(angle + backAng),
+        hy - headLen * Math.sin(angle + backAng),
+      );
+      ctx.closePath();
+      ctx.fill();
+    }
   }
+
+  const blob = await oc.convertToBlob({ type: 'image/png' });
+  return URL.createObjectURL(blob);
+}
+
+function showTimestep(t) {
+  if (!preRendered[t]) return;
+  if (overlayLayer) {
+    overlayLayer.setUrl(preRendered[t]);
+  } else {
+    overlayLayer = L.imageOverlay(preRendered[t], BBOX, { opacity: 0.85, zIndex: 410 }).addTo(map);
+  }
+  if (currentVar === 'ff' && preRenderedArrows[t]) {
+    if (arrowOverlay) {
+      arrowOverlay.setUrl(preRenderedArrows[t]);
+    } else {
+      arrowOverlay = L.imageOverlay(preRenderedArrows[t], BBOX, { opacity: 1.0, zIndex: 420 }).addTo(map);
+    }
+  } else if (currentVar !== 'ff' && arrowOverlay) {
+    arrowOverlay.remove();
+    arrowOverlay = null;
+  }
+}
+
+function yieldFrame() {
+  return new Promise(resolve => requestAnimationFrame(resolve));
 }
 
 // ── Colorbar ─────────────────────────────────────────────────────────────────
@@ -339,100 +456,167 @@ async function onMapClick(e) {
   document.getElementById('fc-chart-panel').classList.remove('hidden');
 
   try {
+    const fetchParams = currentVar === 'ff' ? 'ff,dd' : currentVar;
     const url = `${API_BASE}/timeseries/forecast/${RESOURCE}` +
                 `?lat_lon=${lat.toFixed(4)},${lng.toFixed(4)}` +
-                `&parameters=t2m,rr,ff`;
+                `&parameters=${fetchParams}`;
     const json = await fetchJSON(url);
-    renderChart(json);
+    renderChart(json, currentVar);
   } catch (err) {
     console.error('Timeseries fetch error:', err);
   }
 }
 
-function renderChart(json) {
+function renderChart(json, variable) {
   // GeoSphere timeseries response: json.timestamps [], json.features[0].properties.parameters
-  const times = json.timestamps.map(t => new Date(t).toISOString().slice(11, 16) + ' UTC');
+  const times  = json.timestamps.map(t => new Date(t).toISOString().slice(11, 16) + ' UTC');
   const params = json.features[0].properties.parameters;
 
-  const t2mVals = (params.t2m && params.t2m.data) ? params.t2m.data : [];
-  const rrVals  = (params.rr  && params.rr.data)  ? params.rr.data  : [];
-  const ffVals  = (params.ff  && params.ff.data)  ? params.ff.data  : [];
-
   const canvas = document.getElementById('fc-chart');
-
   if (chartInstance) chartInstance.destroy();
 
-  chartInstance = new Chart(canvas, {
-    type: 'line',
-    data: {
-      labels: times,
-      datasets: [
-        {
+  if (variable === 't2m') {
+    const vals = (params.t2m && params.t2m.data) ? params.t2m.data : [];
+    chartInstance = new Chart(canvas, {
+      type: 'line',
+      data: {
+        labels: times,
+        datasets: [{
           label: 'Temperature (°C)',
-          data: t2mVals,
+          data: vals,
           borderColor: '#e53935',
           backgroundColor: 'rgba(229,57,53,0.1)',
-          yAxisID: 'yT',
-          tension: 0.3,
-          pointRadius: 2,
-        },
-        {
-          label: 'Precipitation (kg m⁻²)',
-          data: rrVals,
-          borderColor: '#1e88e5',
-          backgroundColor: 'rgba(30,136,229,0.15)',
-          yAxisID: 'yR',
           tension: 0.3,
           pointRadius: 2,
           fill: true,
-        },
-        {
+        }],
+      },
+      options: singleAxisOptions('°C', '#e53935', null),
+    });
+    document.getElementById('fc-compass-row').innerHTML = '';
+
+  } else if (variable === 'rr') {
+    const vals = (params.rr && params.rr.data) ? params.rr.data : [];
+    chartInstance = new Chart(canvas, {
+      type: 'bar',
+      data: {
+        labels: times,
+        datasets: [{
+          label: 'Precipitation (kg m⁻²)',
+          data: vals,
+          backgroundColor: 'rgba(30,136,229,0.6)',
+          borderColor: '#1e88e5',
+          borderWidth: 1,
+        }],
+      },
+      options: singleAxisOptions('kg m⁻²', '#1e88e5', 0),
+    });
+    document.getElementById('fc-compass-row').innerHTML = '';
+
+  } else if (variable === 'ff') {
+    const speedVals = (params.ff && params.ff.data) ? params.ff.data : [];
+    const dirVals   = (params.dd && params.dd.data) ? params.dd.data : [];
+    chartInstance = new Chart(canvas, {
+      type: 'line',
+      data: {
+        labels: times,
+        datasets: [{
           label: 'Wind Speed (m s⁻¹)',
-          data: ffVals,
+          data: speedVals,
           borderColor: '#fb8c00',
           backgroundColor: 'rgba(251,140,0,0.1)',
-          yAxisID: 'yW',
           tension: 0.3,
           pointRadius: 2,
-        },
-      ],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      animation: false,
-      plugins: {
-        legend: {
-          labels: { color: '#bdbdbd', font: { size: 10 }, boxWidth: 12 },
-        },
-        tooltip: { mode: 'index', intersect: false },
+          fill: true,
+        }],
       },
-      scales: {
-        x: {
-          ticks: { color: '#9e9e9e', font: { size: 9 }, maxTicksLimit: 7 },
-          grid:  { color: 'rgba(255,255,255,0.06)' },
-        },
-        yT: {
-          type: 'linear', position: 'left',
-          ticks: { color: '#e53935', font: { size: 9 } },
-          grid:  { color: 'rgba(255,255,255,0.06)' },
-          title: { display: true, text: '°C', color: '#e53935', font: { size: 9 } },
-        },
-        yR: {
-          type: 'linear', position: 'right',
-          ticks: { color: '#1e88e5', font: { size: 9 } },
-          grid:  { drawOnChartArea: false },
-          title: { display: true, text: 'kg m⁻²', color: '#1e88e5', font: { size: 9 } },
-        },
-        yW: {
-          type: 'linear', position: 'right',
-          ticks: { color: '#fb8c00', font: { size: 9 } },
-          grid:  { drawOnChartArea: false },
-          title: { display: true, text: 'm s⁻¹', color: '#fb8c00', font: { size: 9 } },
-          offset: true,
-        },
-      },
+      options: singleAxisOptions('m s⁻¹', '#fb8c00', 0),
+    });
+    buildCompassRow(times, speedVals, dirVals);
+  }
+}
+
+function singleAxisOptions(unit, color, yMin) {
+  const yOpts = {
+    type: 'linear', position: 'left',
+    ticks: { color, font: { size: 9 } },
+    grid:  { color: 'rgba(255,255,255,0.06)' },
+    title: { display: true, text: unit, color, font: { size: 9 } },
+  };
+  if (yMin !== null) yOpts.min = yMin;
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: false,
+    plugins: {
+      legend: { labels: { color: '#bdbdbd', font: { size: 10 }, boxWidth: 12 } },
+      tooltip: { mode: 'index', intersect: false },
     },
+    scales: {
+      x: {
+        ticks: { color: '#9e9e9e', font: { size: 9 }, maxTicksLimit: 7 },
+        grid:  { color: 'rgba(255,255,255,0.06)' },
+      },
+      y: yOpts,
+    },
+  };
+}
+
+function buildCompassRow(times, speedVals, dirVals) {
+  const row  = document.getElementById('fc-compass-row');
+  row.innerHTML = '';
+  const meta = VAR_META['ff'];
+  const svgNS = 'http://www.w3.org/2000/svg';
+
+  times.forEach((time, i) => {
+    const speed = speedVals[i];
+    const dir   = dirVals[i];
+    const item  = document.createElement('div');
+    item.className = 'fc-compass-item';
+    item.title = `${time}\nSpeed: ${isFinite(speed) ? speed.toFixed(1) : '—'} m/s\nFrom: ${isFinite(dir) ? Math.round(dir) + '°' : '—'}`;
+
+    const svg = document.createElementNS(svgNS, 'svg');
+    svg.setAttribute('width', '20');
+    svg.setAttribute('height', '20');
+    svg.setAttribute('viewBox', '-10 -10 20 20');
+
+    if (!isFinite(speed) || !isFinite(dir) || speed < 0.5) {
+      const circle = document.createElementNS(svgNS, 'circle');
+      circle.setAttribute('r', '3');
+      circle.setAttribute('fill', '#888');
+      svg.appendChild(circle);
+    } else {
+      const frac = Math.max(0, Math.min(1, speed / meta.max));
+      const [r, g, b] = interpolateColor(meta.stops, frac);
+      const col = `rgb(${r},${g},${b})`;
+
+      const toRad = ((dir + 180) % 360) * Math.PI / 180;
+      const ax = Math.sin(toRad) * 7;
+      const ay = -Math.cos(toRad) * 7;
+
+      const line = document.createElementNS(svgNS, 'line');
+      line.setAttribute('x1', (-ax * 0.5).toFixed(1));
+      line.setAttribute('y1', (-ay * 0.5).toFixed(1));
+      line.setAttribute('x2', (ax * 0.5).toFixed(1));
+      line.setAttribute('y2', (ay * 0.5).toFixed(1));
+      line.setAttribute('stroke', col);
+      line.setAttribute('stroke-width', '1.5');
+      svg.appendChild(line);
+
+      const hLen  = 3.5;
+      const bAng  = 0.45;
+      const angle = Math.atan2(ay, ax);
+      const poly  = document.createElementNS(svgNS, 'polygon');
+      const tip   = `${(ax * 0.5).toFixed(1)},${(ay * 0.5).toFixed(1)}`;
+      const l1    = `${((ax*0.5) - hLen*Math.cos(angle-bAng)).toFixed(1)},${((ay*0.5) - hLen*Math.sin(angle-bAng)).toFixed(1)}`;
+      const l2    = `${((ax*0.5) - hLen*Math.cos(angle+bAng)).toFixed(1)},${((ay*0.5) - hLen*Math.sin(angle+bAng)).toFixed(1)}`;
+      poly.setAttribute('points', `${tip} ${l1} ${l2}`);
+      poly.setAttribute('fill', col);
+      svg.appendChild(poly);
+    }
+
+    item.appendChild(svg);
+    row.appendChild(item);
   });
 }
 

@@ -138,7 +138,7 @@
   right: 0;
   top: 0;
   bottom: 80px; /* leave room for bottom bar */
-  width: 340px;
+  width: 420px;
   z-index: 1000;
   background: rgba(18, 18, 18, 0.93);
   border-left: 1px solid rgba(255,255,255,0.1);
@@ -171,6 +171,26 @@
 #fc-chart {
   flex: 1;
   min-height: 0;
+}
+
+#fc-compass-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-around;
+  padding: 4px 0;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  margin-top: 4px;
+  min-height: 28px;
+  flex-shrink: 0;
+}
+
+.fc-compass-item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  cursor: default;
 }
 
 /* ── Bottom bar ─────────────────────────────────────────────────────────── */
