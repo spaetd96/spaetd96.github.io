@@ -471,7 +471,7 @@ function renderEnsembleCharts(data) {
     times: data.times,
     p10: data.rainP10, p50: data.rainP50, p90: data.rainP90,
     color: '#64b5f6', bandFill: 'rgba(100,181,246,0.22)',
-    yMin0: true, yTickFmt: v => v.toFixed(1),
+    yMin0: true, yMinSpan: 1, yTickFmt: v => v.toFixed(1),
   }));
 
   container.appendChild(makeEnsembleChart({
@@ -483,7 +483,7 @@ function renderEnsembleCharts(data) {
   }));
 }
 
-function makeEnsembleChart({ title, yUnit, times, p10, p50, p90, color, bandFill = null, yMin0 = false, yTickFmt = v => v }) {
+function makeEnsembleChart({ title, yUnit, times, p10, p50, p90, color, bandFill = null, yMin0 = false, yMinSpan = 0, yTickFmt = v => v }) {
   const W = 700, H = 155;
   const ML = 46, MR = 50, MT = 22, MB = 32;
   const CW = W - ML - MR, CH = H - MT - MB;
@@ -495,6 +495,7 @@ function makeEnsembleChart({ title, yUnit, times, p10, p50, p90, color, bandFill
   const span = rawMax - rawMin || 1;
   let yLo = yMin0 ? 0 : rawMin - span * 0.12;
   let yHi = rawMax + span * 0.12;
+  if (yHi - yLo < yMinSpan) yHi = yLo + yMinSpan;
   if (yHi <= yLo) { yLo -= 1; yHi += 1; }
 
   const xOf = i => ML + (i / Math.max(n - 1, 1)) * CW;
