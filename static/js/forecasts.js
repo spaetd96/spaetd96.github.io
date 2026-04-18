@@ -174,6 +174,13 @@ async function fetchAndShowForecast(lat, lng) {
   scroll.classList.add('hidden');
   ensembleScroll.classList.add('hidden');
 
+  // Toggle panel size class based on model type
+  if (m.isEnsemble) {
+    panel.classList.add('fc-panel-ensemble');
+  } else {
+    panel.classList.remove('fc-panel-ensemble');
+  }
+
   // Reset loading UI in case of previous error
   const loadingSpan = loading.querySelector('span');
   loadingSpan.textContent = 'Loading forecast data — this may take a few seconds…';
@@ -477,7 +484,7 @@ function renderEnsembleCharts(data) {
 
 function makeEnsembleChart({ title, yUnit, times, p10, p50, p90, color, bandFill, yMin0 = false, yTickFmt = v => v }) {
   const W = 700, H = 155;
-  const ML = 46, MR = 10, MT = 22, MB = 32;
+  const ML = 46, MR = 50, MT = 22, MB = 32;
   const CW = W - ML - MR, CH = H - MT - MB;
   const n = times.length;
 

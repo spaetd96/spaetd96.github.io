@@ -121,7 +121,12 @@
   backdrop-filter: blur(6px);
   box-shadow: 0 2px 12px rgba(0,0,0,0.5);
   pointer-events: none;
-  white-space: nowrap;
+  animation: fc-hint-pulse 2.5s ease-in-out infinite;
+}
+
+@keyframes fc-hint-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
 }
 
 /* ── Spinner ─────────────────────────────────────────────────────────────── */
@@ -152,6 +157,10 @@
   flex-direction: column;
   backdrop-filter: blur(6px);
   max-height: 55vh;
+}
+
+#fc-forecast-panel.fc-panel-ensemble {
+  max-height: 80vh;
 }
 
 #fc-forecast-header {
@@ -394,14 +403,24 @@
     width: 100%;
   }
   #fc-map {
-    max-height: 62vh;
+    max-height: 55vh;
   }
   #fc-click-hint {
-    bottom: 16px;
-    font-size: 0.8rem;
+    bottom: auto;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 0.82rem;
+    padding: 10px 18px;
+    text-align: center;
+    white-space: normal;
+    max-width: 80vw;
   }
   #fc-forecast-panel {
     max-height: 65vh;
+  }
+  #fc-forecast-panel.fc-panel-ensemble {
+    max-height: 85vh;
   }
   #fc-forecast-header {
     padding: 6px 10px;
