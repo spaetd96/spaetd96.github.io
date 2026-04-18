@@ -353,6 +353,15 @@
     max-width: 100%;
     width: 100%;
   }
+  #fc-map {
+    max-height: 62vh;
+  }
+  #fc-click-hint {
+    bottom: auto;
+    top: calc(62vh + 8px);
+    font-size: 0.8rem;
+    color: #e0e0e0;
+  }
   #fc-forecast-panel {
     max-height: 60vh;
   }
