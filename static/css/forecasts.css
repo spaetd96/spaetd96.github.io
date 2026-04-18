@@ -1,0 +1,268 @@
+/* ── Forecasts page layout ──────────────────────────────────────────────── */
+
+#forecasts-page {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 60px); /* subtract Hugo Blox navbar height */
+  background: #111;
+  font-family: inherit;
+}
+
+/* ── Map ─────────────────────────────────────────────────────────────────── */
+
+#fc-map {
+  flex: 1;
+  width: 100%;
+  min-height: 0; /* allow flex child to shrink */
+}
+
+/* ── Info box (top-left, overlaid on map) ───────────────────────────────── */
+
+#fc-info-box {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 1000;
+  background: rgba(18, 18, 18, 0.88);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 8px;
+  padding: 10px 14px;
+  max-width: 280px;
+  color: #e0e0e0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  backdrop-filter: blur(4px);
+  pointer-events: auto;
+}
+
+#fc-info-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin-bottom: 2px;
+  letter-spacing: 0.02em;
+}
+
+#fc-info-variable {
+  font-size: 0.85rem;
+  color: #26a69a; /* teal accent matching site theme */
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+
+#fc-info-reftime {
+  color: #bdbdbd;
+  font-size: 0.78rem;
+  margin-bottom: 4px;
+}
+
+#fc-info-resolution {
+  color: #9e9e9e;
+  font-size: 0.73rem;
+  margin-bottom: 6px;
+}
+
+#fc-info-credit {
+  font-size: 0.68rem;
+  color: #757575;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  padding-top: 5px;
+  margin-top: 2px;
+}
+
+#fc-info-credit a {
+  color: #80cbc4;
+  text-decoration: none;
+}
+#fc-info-credit a:hover {
+  text-decoration: underline;
+}
+
+/* ── Variable selector + spinner (top-right, overlaid on map) ───────────── */
+
+#fc-controls {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 1000;
+  background: rgba(18, 18, 18, 0.88);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 8px;
+  padding: 10px 14px;
+  color: #e0e0e0;
+  font-size: 0.82rem;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  backdrop-filter: blur(4px);
+}
+
+#fc-controls label {
+  font-weight: 600;
+  color: #bdbdbd;
+  white-space: nowrap;
+}
+
+#fc-var-select {
+  background: #1e1e1e;
+  border: 1px solid rgba(255,255,255,0.18);
+  border-radius: 5px;
+  color: #e0e0e0;
+  padding: 4px 8px;
+  font-size: 0.82rem;
+  cursor: pointer;
+  outline: none;
+}
+#fc-var-select:focus {
+  border-color: #26a69a;
+}
+
+/* spinner */
+.fc-spin-ring {
+  width: 18px;
+  height: 18px;
+  border: 3px solid rgba(255,255,255,0.15);
+  border-top-color: #26a69a;
+  border-radius: 50%;
+  animation: fc-spin 0.7s linear infinite;
+}
+@keyframes fc-spin { to { transform: rotate(360deg); } }
+
+.hidden { display: none !important; }
+
+/* ── Chart panel (right side, slides in on map click) ───────────────────── */
+
+#fc-chart-panel {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 80px; /* leave room for bottom bar */
+  width: 340px;
+  z-index: 1000;
+  background: rgba(18, 18, 18, 0.93);
+  border-left: 1px solid rgba(255,255,255,0.1);
+  padding: 16px 14px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  backdrop-filter: blur(6px);
+}
+
+#fc-chart-close {
+  align-self: flex-end;
+  background: transparent;
+  border: none;
+  color: #9e9e9e;
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+#fc-chart-close:hover { color: #fff; }
+
+#fc-chart-location {
+  font-size: 0.75rem;
+  color: #80cbc4;
+  text-align: center;
+  min-height: 1.1em;
+}
+
+#fc-chart {
+  flex: 1;
+  min-height: 0;
+}
+
+/* ── Bottom bar ─────────────────────────────────────────────────────────── */
+
+#fc-bottom-bar {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  background: rgba(18, 18, 18, 0.95);
+  border-top: 1px solid rgba(255,255,255,0.1);
+  padding: 10px 16px;
+  height: 80px;
+  flex-shrink: 0;
+  z-index: 900;
+}
+
+/* Slider section */
+#fc-slider-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+#fc-time-label {
+  font-size: 0.78rem;
+  color: #bdbdbd;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#fc-time-slider {
+  width: 100%;
+  accent-color: #26a69a;
+  cursor: pointer;
+}
+
+/* Colorbar section */
+#fc-colorbar-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  width: 260px;
+}
+
+#fc-colorbar-canvas {
+  border-radius: 3px;
+  display: block;
+}
+
+#fc-colorbar-ticks {
+  display: flex;
+  justify-content: space-between;
+  width: 260px;
+  font-size: 0.68rem;
+  color: #9e9e9e;
+}
+
+#fc-colorbar-unit {
+  font-size: 0.68rem;
+  color: #757575;
+  align-self: flex-end;
+}
+
+/* ── Responsive: narrow screens stack colorbar below slider ─────────────── */
+
+@media (max-width: 640px) {
+  #fc-bottom-bar {
+    flex-direction: column;
+    height: auto;
+    padding: 10px 12px;
+    gap: 8px;
+  }
+  #fc-colorbar-section {
+    width: 100%;
+  }
+  #fc-colorbar-canvas {
+    width: 100%;
+  }
+  #fc-colorbar-ticks {
+    width: 100%;
+  }
+  #fc-chart-panel {
+    width: 100%;
+    left: 0;
+    right: 0;
+    bottom: 130px;
+    top: auto;
+    height: 220px;
+  }
+}

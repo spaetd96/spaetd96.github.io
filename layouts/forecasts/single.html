@@ -1,0 +1,62 @@
+{{ define "main" }}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="{{ "css/forecasts.css" | relURL }}" />
+
+<div id="forecasts-page">
+
+  {{/* Top-left info box */}}
+  <div id="fc-info-box">
+    <div id="fc-info-title">INCA Nowcast</div>
+    <div id="fc-info-variable">Air Temperature 2 m above ground</div>
+    <div id="fc-info-reftime"></div>
+    <div id="fc-info-resolution">Spatial resolution: 1 km × 1 km · 15 min steps · 3 h horizon</div>
+    <div id="fc-info-credit">
+      Data: <a href="https://data.hub.geosphere.at/dataset/nowcast-v1-15min-1km"
+               target="_blank" rel="noopener">GeoSphere Austria INCA Nowcast v1</a>
+      (CC BY 4.0) ·
+      <a href="https://doi.org/10.60669/ahad-4y43" target="_blank" rel="noopener">doi:10.60669/ahad-4y43</a>
+    </div>
+  </div>
+
+  {{/* Variable selector */}}
+  <div id="fc-controls">
+    <label for="fc-var-select">Variable</label>
+    <select id="fc-var-select">
+      <option value="t2m">Temperature (°C)</option>
+      <option value="rr">Precipitation (kg m⁻²)</option>
+      <option value="ff">Wind Speed (m s⁻¹)</option>
+    </select>
+    <div id="fc-spinner" class="hidden">
+      <div class="fc-spin-ring"></div>
+    </div>
+  </div>
+
+  {{/* Map */}}
+  <div id="fc-map"></div>
+
+  {{/* Chart panel (hidden until map click) */}}
+  <div id="fc-chart-panel" class="hidden">
+    <button id="fc-chart-close" title="Close">✕</button>
+    <div id="fc-chart-location"></div>
+    <canvas id="fc-chart"></canvas>
+  </div>
+
+  {{/* Bottom bar: slider + colorbar */}}
+  <div id="fc-bottom-bar">
+    <div id="fc-slider-section">
+      <span id="fc-time-label">—</span>
+      <input type="range" id="fc-time-slider" min="0" max="12" value="0" step="1" />
+    </div>
+    <div id="fc-colorbar-section">
+      <canvas id="fc-colorbar-canvas" width="260" height="20"></canvas>
+      <div id="fc-colorbar-ticks"></div>
+      <div id="fc-colorbar-unit"></div>
+    </div>
+  </div>
+
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<script src="{{ "js/forecasts.js" | relURL }}"></script>
+{{ end }}
