@@ -84,6 +84,7 @@ function initMap() {
     attribution: '&copy; <a href="https://carto.com/">CARTO</a> · &copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
     subdomains: 'abcd',
     maxZoom: 20,
+    className: 'fc-map-tiles',
   }).addTo(map);
 
   map.on('click', onMapClick);
@@ -261,15 +262,18 @@ function renderForecastTable(data) {
   table.appendChild(dayRow);
 
   // ── Row 2: Hours ──
+  const subHourly = times.some(t => t.getMinutes() !== 0);
   const hourRow = document.createElement('tr');
   hourRow.className = 'fc-row-hours';
   const hourLabel = document.createElement('td');
   hourLabel.className = 'fc-label';
-  hourLabel.textContent = 'Hour';
+  hourLabel.textContent = subHourly ? 'Time' : 'Hour';
   hourRow.appendChild(hourLabel);
   for (let i = 0; i < n; i++) {
     const td = document.createElement('td');
-    td.textContent = String(times[i].getHours()).padStart(2, '0');
+    const hh = String(times[i].getHours()).padStart(2, '0');
+    const mm = String(times[i].getMinutes()).padStart(2, '0');
+    td.textContent = subHourly ? `${hh}:${mm}` : hh;
     hourRow.appendChild(td);
   }
   table.appendChild(hourRow);

@@ -95,6 +95,12 @@
   text-decoration: underline;
 }
 
+/* ── Map tile contrast boost ────────────────────────────────────────────── */
+
+.fc-map-tiles {
+  filter: brightness(1.7) contrast(1.15);
+}
+
 /* ── Click hint ─────────────────────────────────────────────────────────── */
 
 #fc-click-hint {
