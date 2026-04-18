@@ -57,7 +57,8 @@ const WIND_STOPS = [
 
 // ── State ────────────────────────────────────────────────────────────────────
 
-let map, pinMarker = null, currentModel = 'arome', windUnit = 'ms';
+let map, pinMarker = null, currentModel = 'arome', windUnit = 'ms', displayTZ = 'UTC';
+let lastForecastData = null;
 
 // ── Init ─────────────────────────────────────────────────────────────────────
 
@@ -110,12 +111,13 @@ function initControls() {
   document.getElementById('fc-unit-toggle').addEventListener('click', () => {
     windUnit = windUnit === 'ms' ? 'kt' : 'ms';
     document.getElementById('fc-unit-toggle').textContent = windUnit === 'ms' ? 'm/s' : 'kt';
-    // Re-render table if forecast is loaded
-    const scroll = document.getElementById('fc-forecast-scroll');
-    if (!scroll.classList.contains('hidden') && pinMarker) {
-      const ll = pinMarker.getLatLng();
-      fetchAndShowForecast(ll.lat, ll.lng);
-    }
+    if (lastForecastData) renderForecastTable(lastForecastData);
+  });
+
+  document.getElementById('fc-tz-toggle').addEventListener('click', () => {
+    displayTZ = displayTZ === 'UTC' ? 'local' : 'UTC';
+    document.getElementById('fc-tz-toggle').textContent = displayTZ === 'UTC' ? 'UTC' : 'Local';
+    if (lastForecastData) renderForecastTable(lastForecastData);
   });
 }
 
@@ -169,6 +171,7 @@ async function fetchAndShowForecast(lat, lng) {
   try {
     const json = await fetchJSON(url);
     const data = processTimeseries(json);
+    lastForecastData = data;
     renderForecastTable(data);
     loading.classList.add('hidden');
     scroll.classList.remove('hidden');
@@ -232,15 +235,21 @@ function renderForecastTable(data) {
   const table = document.getElementById('fc-forecast-table');
   table.innerHTML = '';
 
-  // Group timesteps by calendar day (local time)
+  // Time helpers — respect displayTZ setting
+  const tz     = displayTZ === 'UTC' ? 'UTC' : undefined; // undefined → browser local
+  const getH   = d => displayTZ === 'UTC' ? d.getUTCHours()   : d.getHours();
+  const getMin = d => displayTZ === 'UTC' ? d.getUTCMinutes() : d.getMinutes();
+  const dayKey = d => d.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short', timeZone: tz });
+  const tzSuffix = displayTZ === 'UTC' ? 'UTC' : 'local';
+
+  // Group timesteps by calendar day
   const dayGroups = [];
   let currentDay = null;
   for (let i = 0; i < n; i++) {
-    const d = times[i];
-    const dayKey = d.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
-    if (dayKey !== currentDay) {
-      dayGroups.push({ label: dayKey, count: 1 });
-      currentDay = dayKey;
+    const k = dayKey(times[i]);
+    if (k !== currentDay) {
+      dayGroups.push({ label: k, count: 1 });
+      currentDay = k;
     } else {
       dayGroups[dayGroups.length - 1].count++;
     }
@@ -262,17 +271,17 @@ function renderForecastTable(data) {
   table.appendChild(dayRow);
 
   // ── Row 2: Hours ──
-  const subHourly = times.some(t => t.getUTCMinutes() !== 0);
+  const subHourly = times.some(t => getMin(t) !== 0);
   const hourRow = document.createElement('tr');
   hourRow.className = 'fc-row-hours';
   const hourLabel = document.createElement('td');
   hourLabel.className = 'fc-label';
-  hourLabel.textContent = subHourly ? 'Time (UTC)' : 'Hour (UTC)';
+  hourLabel.textContent = subHourly ? `Time (${tzSuffix})` : `Hour (${tzSuffix})`;
   hourRow.appendChild(hourLabel);
   for (let i = 0; i < n; i++) {
     const td = document.createElement('td');
-    const hh = String(times[i].getUTCHours()).padStart(2, '0');
-    const mm = String(times[i].getUTCMinutes()).padStart(2, '0');
+    const hh = String(getH(times[i])).padStart(2, '0');
+    const mm = String(getMin(times[i])).padStart(2, '0');
     td.textContent = subHourly ? `${hh}:${mm}` : hh;
     hourRow.appendChild(td);
   }
@@ -287,7 +296,7 @@ function renderForecastTable(data) {
     iconRow.appendChild(iconLabel);
     for (let i = 0; i < n; i++) {
       const td = document.createElement('td');
-      td.textContent = weatherIcon(cloudCover[i], rain[i], times[i].getUTCHours());
+      td.textContent = weatherIcon(cloudCover[i], rain[i], getH(times[i]));
       iconRow.appendChild(td);
     }
     table.appendChild(iconRow);

@@ -165,7 +165,8 @@
   gap: 8px;
 }
 
-#fc-unit-toggle {
+#fc-unit-toggle,
+#fc-tz-toggle {
   background: rgba(38, 166, 154, 0.15);
   border: 1px solid rgba(38, 166, 154, 0.5);
   border-radius: 4px;
@@ -176,7 +177,8 @@
   padding: 2px 8px;
   line-height: 1.4;
 }
-#fc-unit-toggle:hover {
+#fc-unit-toggle:hover,
+#fc-tz-toggle:hover {
   background: rgba(38, 166, 154, 0.3);
   color: #fff;
 }
