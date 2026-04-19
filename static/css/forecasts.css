@@ -552,8 +552,7 @@ footer        { display: none !important; }
 /* ── Responsive ─────────────────────────────────────────────────────────── */
 
 @media (max-width: 640px) {
-  #fc-title-bar { display: none; }
-  #fc-outer { height: 100vh; }
+  #fc-outer { height: 100dvh; }
   /* Info box: anchor right edge so it can't reach the search box */
   #fc-info-box {
     top: 10px;
@@ -576,16 +575,17 @@ footer        { display: none !important; }
   }
   #fc-search-input {
     padding: 6px 10px;
-    font-size: 0.76rem;
+    font-size: 16px; /* prevents iOS auto-zoom on focus */
   }
   #fc-map {
-    max-height: 55vh;
+    flex: 1;
+    max-height: none;
   }
   #fc-click-hint {
-    bottom: auto;
-    top: 50%;
+    bottom: 80px;
+    top: auto;
     left: 50%;
-    transform: translate(-50%, -50%);
+    transform: translateX(-50%);
     font-size: 0.82rem;
     padding: 10px 18px;
     text-align: center;

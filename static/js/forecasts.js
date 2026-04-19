@@ -791,7 +791,9 @@ async function searchLocation(query) {
       div.addEventListener('click', () => {
         const lat = parseFloat(item.lat);
         const lon = parseFloat(item.lon);
-        document.getElementById('fc-search-input').value = '';
+        const searchInput = document.getElementById('fc-search-input');
+        searchInput.value = '';
+        searchInput.blur();
         results.classList.add('hidden');
 
         if (item.boundingbox) {
@@ -1078,7 +1080,7 @@ function renderNearestStationBar() {
   if (pressure !== null) parts.push(`${pressure.toFixed(0)} hPa`);
 
   nearestBar.innerHTML = `
-    <span class="fc-nearest-label">Closest weather station: ${station.name} (${distance.toFixed(1)} km, ${station.altitude}\u00A0m) \u2014 ${timeFmt}</span>
+    <span class="fc-nearest-label">Closest weather station: ${station.name} (${distance.toFixed(1)}\u00A0km away, ${station.altitude}\u00A0m a.s.l.) \u2014 ${timeFmt}</span>
     <span class="fc-nearest-values">${parts.join(' \u00B7 ')}</span>
   `;
   nearestBar.classList.remove('hidden');
