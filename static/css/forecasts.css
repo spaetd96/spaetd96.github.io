@@ -239,6 +239,16 @@ footer        { display: none !important; }
   letter-spacing: 0.05em;
 }
 
+/* ── Station history charts ─────────────────────────────────────────────── */
+
+.fc-station-charts {
+  padding: 0 12px 12px;
+}
+
+.fc-station-chart {
+  margin-bottom: 4px;
+}
+
 /* ── Nearest station bar ────────────────────────────────────────────────── */
 
 #fc-nearest-station {
@@ -552,7 +562,7 @@ footer        { display: none !important; }
 /* ── Responsive ─────────────────────────────────────────────────────────── */
 
 @media (max-width: 640px) {
-  #fc-outer { height: 100dvh; }
+  #fc-outer { height: 100svh; }
   /* Info box: anchor right edge so it can't reach the search box */
   #fc-info-box {
     top: 10px;

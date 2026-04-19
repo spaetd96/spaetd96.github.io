@@ -54,6 +54,8 @@ const MODELS = {
 
 const TAWES_RESOURCE = 'tawes-v1-10min';
 const STATION_PARAMS = 'TL,RR,FF,DD,FFX,RF,P,SCHNEE';
+const KLIMA_V2_RESOURCE = 'klima-v2-10min';
+const HIST_PARAMS = 'tl,rf,p,ff';
 
 const MS_TO_KT = 1.94384;
 
@@ -80,6 +82,7 @@ const WIND_STOPS = [
 
 let map, pinMarker = null, currentModel = 'arome', windUnit = 'kt', displayTZ = 'local';
 let lastForecastData = null;
+let lastHistData = null;
 let stationMeta = null;
 let stationMarkerLayer = null;
 let nearestStationMarker = null;
@@ -881,6 +884,7 @@ async function onStationClick(station, marker) {
   stationDataEl.classList.add('hidden');
   nearestBar.classList.add('hidden');
   document.getElementById('fc-click-hint').classList.add('hidden');
+  lastHistData = null;
 
   const loadingSpan = loading.querySelector('span');
   loadingSpan.textContent = 'Loading station data\u2026';
@@ -898,6 +902,12 @@ async function onStationClick(station, marker) {
     renderStationData(params, station, timestamp);
     loading.classList.add('hidden');
     stationDataEl.classList.remove('hidden');
+    fetchStationHistory(station.id).then(histData => {
+      if (histData && lastForecastData?.isStation && lastForecastData.station.id === station.id) {
+        lastHistData = histData;
+        renderStationHistoryCharts(histData);
+      }
+    }).catch(() => {});
   } catch (err) {
     console.error('Station data error:', err);
     spinner.style.display = 'none';
@@ -999,7 +1009,151 @@ function renderStationData(params, station, timestamp) {
   html += '</div>';
   container.innerHTML = html;
 
+  if (lastHistData) renderStationHistoryCharts(lastHistData);
   lastForecastData = { isStation: true, params, station, timestamp };
+}
+
+// ── Station history charts ───────────────────────────────────────────────────
+
+async function fetchStationHistory(stationId) {
+  const now = new Date();
+  const end = now.toISOString().substring(0, 16);
+  const start = new Date(now - 25 * 3600 * 1000).toISOString().substring(0, 16);
+  const url = `${API_BASE}/station/historical/${KLIMA_V2_RESOURCE}?parameters=${HIST_PARAMS}&station_ids=${stationId}&start=${start}&end=${end}`;
+  try {
+    const json = await fetchJSON(url);
+    if (!json.timestamps || json.timestamps.length === 0) return null;
+    const feat = json.features?.[0];
+    if (!feat) return null;
+    const p = feat.properties.parameters;
+    const hourly = json.timestamps
+      .map((ts, i) => ({ d: new Date(ts), i }))
+      .filter(({ d }) => d.getMinutes() === 0);
+    if (hourly.length < 2) return null;
+    return {
+      times:    hourly.map(({ d }) => d),
+      temp:     hourly.map(({ i }) => p.tl?.data[i] ?? null),
+      humidity: hourly.map(({ i }) => p.rf?.data[i] ?? null),
+      pressure: hourly.map(({ i }) => p.p?.data[i] ?? null),
+      wind:     hourly.map(({ i }) => p.ff?.data[i] ?? null),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function renderStationHistoryCharts(histData) {
+  const container = document.getElementById('fc-station-data');
+  const useKt = windUnit === 'kt';
+  const toWind = v => (v !== null && isFinite(v)) ? (useKt ? v * MS_TO_KT : v) : v;
+  const windLabel = useKt ? 'kt' : 'm/s';
+
+  const wrap = document.createElement('div');
+  wrap.className = 'fc-station-charts';
+  wrap.appendChild(makeHistoryChart({ title: 'Temperature (°C)', times: histData.times, values: histData.temp, color: '#ef9a9a' }));
+  wrap.appendChild(makeHistoryChart({ title: 'Humidity (%)', times: histData.times, values: histData.humidity, color: '#64b5f6', yMin0: true, yMax: 100 }));
+  wrap.appendChild(makeHistoryChart({ title: 'Pressure (hPa)', times: histData.times, values: histData.pressure, color: '#80cbc4' }));
+  wrap.appendChild(makeHistoryChart({ title: `Wind (${windLabel})`, times: histData.times, values: histData.wind.map(toWind), color: '#ce93d8', yMin0: true }));
+  container.appendChild(wrap);
+}
+
+function makeHistoryChart({ title, times, values, color, yMin0 = false, yMax = null }) {
+  const W = 700, H = 120;
+  const ML = 46, MR = 14, MT = 20, MB = 28;
+  const CW = W - ML - MR, CH = H - MT - MB;
+  const n = times.length;
+
+  const valid = values.filter(v => v !== null && isFinite(v));
+  const wrapper = document.createElement('div');
+  wrapper.className = 'fc-station-chart';
+  if (valid.length < 2) return wrapper;
+
+  const rawMin = Math.min(...valid);
+  const rawMax = Math.max(...valid);
+  const span = rawMax - rawMin || 1;
+  let yLo = yMin0 ? 0 : rawMin - span * 0.1;
+  let yHi = yMax !== null ? yMax : rawMax + span * 0.1;
+  if (yHi <= yLo) { yLo -= 1; yHi += 1; }
+
+  const xOf = i => ML + (i / Math.max(n - 1, 1)) * CW;
+  const yOf = v => MT + CH - ((v - yLo) / (yHi - yLo)) * CH;
+  const clamp = v => Math.max(yLo, Math.min(yHi, v));
+
+  const svgNS = 'http://www.w3.org/2000/svg';
+  const el = (tag, attrs, text) => {
+    const e = document.createElementNS(svgNS, tag);
+    for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+    if (text !== undefined) e.textContent = text;
+    return e;
+  };
+
+  const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, width: '100%', style: 'display:block;overflow:visible' });
+
+  // Title
+  svg.appendChild(el('text', {
+    x: ML + CW / 2, y: 12, 'text-anchor': 'middle',
+    fill: '#9e9e9e', 'font-size': '10', 'font-family': 'inherit', 'font-weight': '600',
+  }, title));
+
+  // Y-axis grid + ticks
+  for (let i = 0; i <= 4; i++) {
+    const v = yLo + (yHi - yLo) * (i / 4);
+    const y = yOf(v);
+    svg.appendChild(el('line', { x1: ML, x2: ML + CW, y1: y, y2: y, stroke: 'rgba(255,255,255,0.07)', 'stroke-width': '1' }));
+    const lbl = Math.abs(v) < 10 ? v.toFixed(1) : String(Math.round(v));
+    svg.appendChild(el('text', {
+      x: ML - 5, y: y + 3.5, 'text-anchor': 'end',
+      fill: '#7a7a7a', 'font-size': '9', 'font-family': 'inherit',
+    }, lbl));
+  }
+
+  // X-axis time labels
+  const tzOpt = displayTZ === 'UTC' ? 'UTC' : undefined;
+  const getH = d => displayTZ === 'UTC' ? d.getUTCHours() : d.getHours();
+  let prevDK = null;
+  for (let i = 0; i < n; i++) {
+    const h = getH(times[i]);
+    const dk = times[i].toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short', timeZone: tzOpt });
+    const x = xOf(i);
+    if (dk !== prevDK) {
+      svg.appendChild(el('line', { x1: x, x2: x, y1: MT, y2: MT + CH + 5, stroke: 'rgba(255,255,255,0.18)', 'stroke-width': '1' }));
+      svg.appendChild(el('text', {
+        x: x + 3, y: MT + CH + 18,
+        fill: '#bdbdbd', 'font-size': '8.5', 'font-family': 'inherit', 'font-weight': '600',
+      }, dk));
+      prevDK = dk;
+    } else if (h % 6 === 0) {
+      svg.appendChild(el('line', { x1: x, x2: x, y1: MT + CH, y2: MT + CH + 4, stroke: 'rgba(255,255,255,0.1)', 'stroke-width': '1' }));
+      svg.appendChild(el('text', {
+        x, y: MT + CH + 15, 'text-anchor': 'middle',
+        fill: '#5a5a5a', 'font-size': '8', 'font-family': 'inherit',
+      }, String(h).padStart(2, '0')));
+    }
+  }
+
+  // Line path (with gap handling for nulls)
+  let pathD = '';
+  let inSeg = false;
+  for (let i = 0; i < n; i++) {
+    const v = values[i];
+    if (v === null || !isFinite(v)) { inSeg = false; continue; }
+    const x = xOf(i).toFixed(1);
+    const y = yOf(clamp(v)).toFixed(1);
+    pathD += inSeg ? ` L ${x},${y}` : `M ${x},${y}`;
+    inSeg = true;
+  }
+  if (pathD) {
+    svg.appendChild(el('path', {
+      d: pathD, fill: 'none', stroke: color,
+      'stroke-width': '1.8', 'stroke-linejoin': 'round', 'stroke-linecap': 'round',
+    }));
+  }
+
+  // Border
+  svg.appendChild(el('rect', { x: ML, y: MT, width: CW, height: CH, fill: 'none', stroke: 'rgba(255,255,255,0.08)', 'stroke-width': '1' }));
+
+  wrapper.appendChild(svg);
+  return wrapper;
 }
 
 // ── Nearest station (INCA mode) ──────────────────────────────────────────────
