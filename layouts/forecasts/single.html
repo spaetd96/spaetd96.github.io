@@ -13,6 +13,7 @@
         <option value="arome" selected>AROME NWP (60 h, 1 h)</option>
         <option value="inca">INCA Nowcast (3 h, 15 min)</option>
         <option value="ensemble">Ensemble (60 h, 1 h)</option>
+        <option value="stations">Stations (current)</option>
       </select>
     </div>
     <div id="fc-info-resolution"></div>
@@ -21,6 +22,12 @@
 
   {{/* Map (location picker only) */}}
   <div id="fc-map"></div>
+
+  {{/* Search box */}}
+  <div id="fc-search-box">
+    <input type="text" id="fc-search-input" placeholder="Search location…" autocomplete="off" />
+    <div id="fc-search-results" class="hidden"></div>
+  </div>
 
   {{/* Click hint */}}
   <div id="fc-click-hint">Click anywhere on the map to see a weather forecast</div>
@@ -35,6 +42,7 @@
         <button id="fc-forecast-close" title="Close">✕</button>
       </div>
     </div>
+    <div id="fc-nearest-station" class="hidden"></div>
     <div id="fc-forecast-loading" class="hidden">
       <div class="fc-spin-ring"></div>
       <span>Loading forecast data — this may take a few seconds…</span>
@@ -43,6 +51,7 @@
       <table id="fc-forecast-table"></table>
     </div>
     <div id="fc-ensemble-scroll" class="hidden"></div>
+    <div id="fc-station-data" class="hidden"></div>
   </div>
 
 </div>

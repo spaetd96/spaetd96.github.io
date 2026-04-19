@@ -96,10 +96,139 @@
   text-decoration: underline;
 }
 
-/* ── Map tile contrast boost ────────────────────────────────────────────── */
+/* ── Search box ──────────────────────────────────────────────────────────── */
 
-.fc-map-tiles {
-  filter: brightness(1.7) contrast(1.15);
+#fc-search-box {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 1000;
+  width: 240px;
+}
+
+#fc-search-input {
+  width: 100%;
+  background: rgba(18, 18, 18, 0.88);
+  border: 1px solid rgba(255,255,255,0.18);
+  border-radius: 8px;
+  color: #e0e0e0;
+  padding: 8px 12px;
+  font-size: 0.82rem;
+  outline: none;
+  backdrop-filter: blur(4px);
+  box-sizing: border-box;
+}
+#fc-search-input::placeholder {
+  color: #757575;
+}
+#fc-search-input:focus {
+  border-color: #26a69a;
+}
+
+#fc-search-results {
+  background: rgba(18, 18, 18, 0.95);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 8px;
+  margin-top: 4px;
+  max-height: 200px;
+  overflow-y: auto;
+  backdrop-filter: blur(4px);
+}
+
+.fc-search-item {
+  padding: 8px 12px;
+  font-size: 0.78rem;
+  color: #e0e0e0;
+  cursor: pointer;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fc-search-item:hover {
+  background: rgba(38, 166, 154, 0.15);
+}
+.fc-search-item:last-child {
+  border-bottom: none;
+}
+.fc-search-empty {
+  color: #757575;
+  cursor: default;
+  font-style: italic;
+}
+
+/* ── Station data card ──────────────────────────────────────────────────── */
+
+#fc-station-data {
+  padding: 12px 16px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.fc-station-time {
+  font-size: 0.72rem;
+  color: #9e9e9e;
+  margin-bottom: 10px;
+}
+
+.fc-station-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 10px;
+}
+
+.fc-station-param {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.fc-sp-icon {
+  font-size: 1.2rem;
+}
+
+.fc-sp-val {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #fff;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.fc-sp-label {
+  font-size: 0.68rem;
+  color: #9e9e9e;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* ── Nearest station bar ────────────────────────────────────────────────── */
+
+#fc-nearest-station {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 16px;
+  background: rgba(255, 152, 0, 0.08);
+  border-bottom: 1px solid rgba(255, 152, 0, 0.2);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.fc-nearest-label {
+  font-size: 0.75rem;
+  color: #ff9800;
+  font-weight: 600;
+}
+
+.fc-nearest-values {
+  font-size: 0.75rem;
+  color: #e0e0e0;
 }
 
 /* ── Click hint ─────────────────────────────────────────────────────────── */
@@ -446,5 +575,32 @@
   }
   #fc-ensemble-scroll {
     padding: 6px 8px 10px;
+  }
+  #fc-search-box {
+    width: 160px;
+    top: 10px;
+    right: 10px;
+  }
+  #fc-search-input {
+    padding: 6px 10px;
+    font-size: 0.76rem;
+  }
+  .fc-station-grid {
+    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+    gap: 8px;
+  }
+  .fc-station-param {
+    padding: 8px 10px;
+  }
+  .fc-sp-val {
+    font-size: 0.88rem;
+  }
+  #fc-nearest-station {
+    padding: 5px 10px;
+    gap: 8px;
+  }
+  .fc-nearest-label,
+  .fc-nearest-values {
+    font-size: 0.68rem;
   }
 }
