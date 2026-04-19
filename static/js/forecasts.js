@@ -305,14 +305,28 @@ async function fetchAndShowForecast(lat, lng) {
 function processOpenMeteoTimeseries(json) {
   const h = json.hourly;
   // Open-Meteo timestamps are UTC ISO strings without a timezone suffix; append 'Z'
-  const times = h.time.map(t => new Date(t + 'Z'));
-  const temp       = h.temperature_2m;
-  const rain       = h.rain.map(v => (v === null ? 0 : Math.max(0, v)));
-  const windSpeed  = h.wind_speed_10m;
-  const windDir    = h.wind_direction_10m;
-  const gustSpeed  = h.wind_gusts_10m;
+  const allTimes = h.time.map(t => new Date(t + 'Z'));
+  
+  // Get the start of the current hour in local time
+  const now = new Date();
+  const lastFullHour = new Date(now);
+  lastFullHour.setMinutes(0, 0, 0);
+  
+  // Filter to only include times >= lastFullHour
+  const validIndices = allTimes
+    .map((_, i) => i)
+    .filter(i => allTimes[i] >= lastFullHour);
+  
+  // Extract only valid timesteps for each data array
+  const times      = validIndices.map(i => allTimes[i]);
+  const temp       = validIndices.map(i => h.temperature_2m[i]);
+  const rain       = validIndices.map(i => h.rain[i] === null ? 0 : Math.max(0, h.rain[i]));
+  const windSpeed  = validIndices.map(i => h.wind_speed_10m[i]);
+  const windDir    = validIndices.map(i => h.wind_direction_10m[i]);
+  const gustSpeed  = validIndices.map(i => h.wind_gusts_10m[i]);
   // Cloud cover is 0–100 in Open-Meteo; normalise to 0–1 for weatherIcon()
-  const cloudCover = h.cloud_cover.map(v => (v === null ? null : v / 100));
+  const cloudCover = validIndices.map(i => h.cloud_cover[i] === null ? null : h.cloud_cover[i] / 100);
+  
   return { times, temp, rain, windSpeed, windDir, gustSpeed, cloudCover };
 }
 
