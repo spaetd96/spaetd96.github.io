@@ -4,6 +4,7 @@
 // ── Constants ────────────────────────────────────────────────────────────────
 
 const API_BASE = 'https://dataset.api.hub.geosphere.at/v1';
+const OPENMETEO_BASE = 'https://api.open-meteo.com/v1/forecast';
 
 const MODELS = {
   arome: {
@@ -31,6 +32,15 @@ const MODELS = {
     accumulated:   false,
     hasUV:         false,
     hasUVgust:     false,
+  },
+  icon_ch1: {
+    label:    'ICON-CH1',
+    desc:     'MeteoSwiss ICON-CH1-EPS · hourly up to 33 h · 1 km grid · updated every 3 h · covers Central Europe',
+    dataUrl:  'https://open-meteo.com/en/docs/meteoswiss-api',
+    doi:      null,
+    doiUrl:   null,
+    hasCloudCover: true,
+    isOpenMeteo:   true,
   },
   ensemble: {
     resource: 'ensemble-v1-1h-2500m',
@@ -189,6 +199,8 @@ function updateInfoBox() {
   if (m.isStation) {
     credit = `Data: <a href="${m.dataUrl}" target="_blank" rel="noopener">GeoSphere TAWES</a> (current) · ` +
              `<a href="${m.dataUrl2}" target="_blank" rel="noopener">klima-v2-1h</a> (24 h history) (CC BY 4.0)`;
+  } else if (m.isOpenMeteo) {
+    credit = `Data: <a href="https://www.meteoswiss.admin.ch/weather/warning-and-forecasting-systems/icon-forecasting-systems.html" target="_blank" rel="noopener">MeteoSwiss ICON-CH1-EPS</a> via <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a> (CC BY 4.0)`;
   } else {
     const doiPart = m.doi ? ` · <a href="${m.doiUrl}" target="_blank" rel="noopener">doi:${m.doi}</a>` : '';
     credit = `Data: <a href="${m.dataUrl}" target="_blank" rel="noopener">GeoSphere Austria ${m.label}</a> (CC BY 4.0)${doiPart}`;
@@ -250,12 +262,24 @@ async function fetchAndShowForecast(lat, lng) {
   document.getElementById('fc-forecast-location').textContent =
     `${lat.toFixed(3)}°N, ${lng.toFixed(3)}°E · ${m.label}`;
 
-  const url = `${API_BASE}/timeseries/forecast/${m.resource}` +
-              `?lat_lon=${lat.toFixed(4)},${lng.toFixed(4)}&parameters=${m.params}`;
+  let url;
+  if (m.isOpenMeteo) {
+    url = `${OPENMETEO_BASE}?latitude=${lat.toFixed(4)}&longitude=${lng.toFixed(4)}` +
+          `&hourly=temperature_2m,rain,wind_speed_10m,wind_direction_10m,wind_gusts_10m,cloud_cover` +
+          `&models=meteoswiss_icon_ch1&forecast_days=2&wind_speed_unit=ms&timezone=UTC`;
+  } else {
+    url = `${API_BASE}/timeseries/forecast/${m.resource}` +
+          `?lat_lon=${lat.toFixed(4)},${lng.toFixed(4)}&parameters=${m.params}`;
+  }
 
   try {
     const json = await fetchJSON(url);
-    if (m.isEnsemble) {
+    if (m.isOpenMeteo) {
+      lastForecastData = processOpenMeteoTimeseries(json);
+      lastForecastData.isEnsemble = false;
+      scroll.classList.remove('hidden');
+      renderForecastTable(lastForecastData);
+    } else if (m.isEnsemble) {
       lastForecastData = processEnsembleTimeseries(json);
       ensembleScroll.classList.remove('hidden');
       renderEnsembleCharts(lastForecastData);
@@ -274,6 +298,22 @@ async function fetchAndShowForecast(lat, lng) {
     spinner.style.display = 'none';
     loadingSpan.textContent = 'Error loading forecast data. The location may be outside the model domain.';
   }
+}
+
+// ── Process Open-Meteo API response ─────────────────────────────────────────
+
+function processOpenMeteoTimeseries(json) {
+  const h = json.hourly;
+  // Open-Meteo timestamps are UTC ISO strings without a timezone suffix; append 'Z'
+  const times = h.time.map(t => new Date(t + 'Z'));
+  const temp       = h.temperature_2m;
+  const rain       = h.rain.map(v => (v === null ? 0 : Math.max(0, v)));
+  const windSpeed  = h.wind_speed_10m;
+  const windDir    = h.wind_direction_10m;
+  const gustSpeed  = h.wind_gusts_10m;
+  // Cloud cover is 0–100 in Open-Meteo; normalise to 0–1 for weatherIcon()
+  const cloudCover = h.cloud_cover.map(v => (v === null ? null : v / 100));
+  return { times, temp, rain, windSpeed, windDir, gustSpeed, cloudCover };
 }
 
 // ── Process API response ─────────────────────────────────────────────────────
