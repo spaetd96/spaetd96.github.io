@@ -837,9 +837,22 @@ async function searchLocation(query) {
 
 async function ensureStationMeta() {
   if (stationMeta) return stationMeta;
-  const url = `${API_BASE}/station/current/${TAWES_RESOURCE}/metadata`;
-  const meta = await fetchJSON(url);
-  stationMeta = meta.stations.filter(s => s.is_active);
+  const [tawesJson, klimaJson] = await Promise.all([
+    fetchJSON(`${API_BASE}/station/current/${TAWES_RESOURCE}/metadata`),
+    fetchJSON(`${API_BASE}/station/historical/${KLIMA_V2_RESOURCE}/metadata`),
+  ]);
+  const klimaActive = klimaJson.stations.filter(k => k.is_active);
+  stationMeta = tawesJson.stations
+    .filter(s => s.is_active)
+    .map(s => {
+      let best = null, bestDist = Infinity;
+      for (const k of klimaActive) {
+        const d = (k.lat - s.lat) ** 2 + (k.lon - s.lon) ** 2;
+        if (d < bestDist) { bestDist = d; best = k; }
+      }
+      // Only use klima ID if within ~1km (0.0001 in squared degrees ≈ 1.1km)
+      return { ...s, klimaId: (best && bestDist < 0.0001) ? best.id : null };
+    });
   return stationMeta;
 }
 
@@ -908,7 +921,7 @@ async function onStationClick(station, marker) {
     renderStationData(params, station, timestamp);
     loading.classList.add('hidden');
     stationDataEl.classList.remove('hidden');
-    fetchStationHistory(station.id).then(histData => {
+    fetchStationHistory(station.klimaId).then(histData => {
       if (histData && lastForecastData?.isStation && lastForecastData.station.id === station.id) {
         lastHistData = histData;
         renderStationHistoryCharts(histData);
@@ -1022,6 +1035,7 @@ function renderStationData(params, station, timestamp) {
 // ── Station history charts ───────────────────────────────────────────────────
 
 async function fetchStationHistory(stationId) {
+  if (stationId == null) return null;
   const now = new Date();
   const end = now.toISOString().substring(0, 16);
   const start = new Date(now - 24 * 3600 * 1000).toISOString().substring(0, 16);
@@ -1048,6 +1062,8 @@ async function fetchStationHistory(stationId) {
 
 function renderStationHistoryCharts(histData) {
   const container = document.getElementById('fc-station-data');
+  const existing = container.querySelector('.fc-station-charts');
+  if (existing) existing.remove();
   const useKt = windUnit === 'kt';
   const toWind = v => (v !== null && isFinite(v)) ? (useKt ? v * MS_TO_KT : v) : v;
   const windLabel = useKt ? 'kt' : 'm/s';
