@@ -267,6 +267,11 @@ async function fetchAndShowForecast(lat, lng) {
     }
     loading.classList.add('hidden');
     if (currentModel === 'inca') {
+      const elevation = json.features?.[0]?.geometry?.coordinates?.[2];
+      if (elevation != null) {
+        document.getElementById('fc-forecast-location').textContent =
+          `${lat.toFixed(3)}\u00b0N, ${lng.toFixed(3)}\u00b0E \u00b7 ${m.label} \u00b7 ${Math.round(elevation)}\u00a0m a.s.l.`;
+      }
       fetchAndShowNearestStation(lat, lng);
     }
   } catch (err) {
@@ -966,6 +971,7 @@ function renderStationData(params, station, timestamp) {
   };
 
   let html = `<div class="fc-station-time">Measured at ${timeFmt}</div>`;
+  html += '<h3 class="fc-section-heading">Current observations</h3>';
   html += '<div class="fc-station-grid">';
 
   if (temp !== null) {
@@ -1070,6 +1076,10 @@ function renderStationHistoryCharts(histData) {
 
   const wrap = document.createElement('div');
   wrap.className = 'fc-station-charts';
+  const histHeading = document.createElement('h3');
+  histHeading.className = 'fc-section-heading';
+  histHeading.textContent = 'Last 24 hours';
+  wrap.appendChild(histHeading);
   wrap.appendChild(makeHistoryChart({ title: 'Temperature (°C)', times: histData.times, values: histData.temp, color: '#ef9a9a' }));
   wrap.appendChild(makeHistoryChart({ title: 'Humidity (%)', times: histData.times, values: histData.humidity, color: '#64b5f6', yMin0: true, yMax: 100 }));
   wrap.appendChild(makeHistoryChart({ title: 'Pressure (hPa)', times: histData.times, values: histData.pressure, color: '#80cbc4' }));

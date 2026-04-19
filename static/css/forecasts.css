@@ -203,6 +203,16 @@ footer        { display: none !important; }
   margin-bottom: 10px;
 }
 
+.fc-section-heading {
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: #9e9e9e;
+  margin: 14px 0 8px;
+  padding: 0;
+}
+
 .fc-station-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
@@ -586,6 +596,9 @@ footer        { display: none !important; }
   #fc-search-input {
     padding: 6px 10px;
     font-size: 16px; /* prevents iOS auto-zoom on focus */
+  }
+  #fc-outer {
+    height: 100svh;
   }
   #fc-map {
     flex: 1;
