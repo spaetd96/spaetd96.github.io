@@ -520,8 +520,10 @@
 /* ── Responsive ─────────────────────────────────────────────────────────── */
 
 @media (max-width: 640px) {
+  /* Info box: anchor right edge so it can't reach the search box */
   #fc-info-box {
-    max-width: 220px;
+    right: 165px;
+    max-width: none;
     padding: 8px 10px;
   }
   #fc-model-wrapper {
@@ -530,6 +532,16 @@
   #fc-model-select {
     max-width: 100%;
     width: 100%;
+  }
+  /* Search box: fixed width, flush to right */
+  #fc-search-box {
+    width: 150px;
+    top: 10px;
+    right: 10px;
+  }
+  #fc-search-input {
+    padding: 6px 10px;
+    font-size: 0.76rem;
   }
   #fc-map {
     max-height: 55vh;
@@ -576,15 +588,7 @@
   #fc-ensemble-scroll {
     padding: 6px 8px 10px;
   }
-  #fc-search-box {
-    width: 160px;
-    top: 10px;
-    right: 10px;
-  }
-  #fc-search-input {
-    padding: 6px 10px;
-    font-size: 0.76rem;
-  }
+
   .fc-station-grid {
     grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
     gap: 8px;

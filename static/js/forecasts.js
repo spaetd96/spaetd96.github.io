@@ -109,9 +109,9 @@ function initMap() {
 
   L.control.zoom({ position: 'bottomright' }).addTo(map);
 
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-    maxZoom: 19,
+  L.tileLayer('https://tile.jawg.io/jawg-terrain/{z}/{x}/{y}{r}.png?access-token=yCsJVR3m9Cl8MYpNhawkJVMjJuTKILFhOLHb3pzNDFrpwQHvfMgs5bMHC1kINJ1X', {
+    attribution: '<a href="https://www.jawg.io" target="_blank">&copy; Jawg</a> &copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> contributors',
+    maxZoom: 22,
   }).addTo(map);
 
   stationMarkerLayer = L.layerGroup().addTo(map);
