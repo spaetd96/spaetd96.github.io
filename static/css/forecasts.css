@@ -255,6 +255,11 @@ footer        { display: none !important; }
   padding: 0 12px 12px;
 }
 
+.fc-station-charts .fc-section-heading {
+  margin-left: -12px;
+  margin-right: -12px;
+}
+
 .fc-station-chart {
   margin-bottom: 4px;
 }

@@ -268,16 +268,6 @@ async function fetchAndShowForecast(lat, lng) {
     loading.classList.add('hidden');
     if (currentModel === 'inca') {
       fetchAndShowNearestStation(lat, lng);
-      fetch(`https://api.opentopodata.org/v1/eudem25m?locations=${lat.toFixed(5)},${lng.toFixed(5)}`)
-        .then(r => r.json())
-        .then(elJson => {
-          const elev = elJson?.results?.[0]?.elevation;
-          if (elev != null) {
-            document.getElementById('fc-forecast-location').textContent =
-              `${lat.toFixed(3)}\u00b0N, ${lng.toFixed(3)}\u00b0E \u00b7 ${m.label} \u00b7 ${Math.round(elev)}\u00a0m a.s.l.`;
-          }
-        })
-        .catch(() => {});
     }
   } catch (err) {
     console.error('Forecast fetch error:', err);
