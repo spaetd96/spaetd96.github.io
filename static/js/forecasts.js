@@ -22,7 +22,7 @@ const MODELS = {
   inca: {
     resource: 'nowcast-v1-15min-1km',
     label:    'INCA Nowcast',
-    desc:     '15-minute steps · 3-hour horizon · 1 km resolution',
+    desc:     'Very short-range nowcast · 15-min steps up to 3 h · 1 km grid · best for the next few hours',
     params:   't2m,rr,ff,dd,fx',
     dataUrl:  'https://data.hub.geosphere.at/dataset/nowcast-v1-15min-1km',
     doi:      '10.60669/ahad-4y43',
@@ -35,7 +35,7 @@ const MODELS = {
   ensemble: {
     resource: 'ensemble-v1-1h-2500m',
     label:    'Ensemble',
-    desc:     '1-hour steps · 60-hour horizon · 2.5 km resolution',
+    desc:     'Probabilistic forecast showing uncertainty \u00b7 hourly steps up to 60 h \u00b7 range of likely outcomes',
     params:   't2m_p10,t2m_p50,t2m_p90,rr_p10,rr_p50,rr_p90,u10m_p10,u10m_p50,u10m_p90,v10m_p10,v10m_p50,v10m_p90',
     dataUrl:  'https://data.hub.geosphere.at/dataset/ensemble-v1-1h-2500m',
     doi:      null,
@@ -44,7 +44,7 @@ const MODELS = {
   },
   stations: {
     label:    'Stations',
-    desc:     'Current 10-min measurements · TAWES network',
+    desc:     'Live measurements from ~260 Austrian weather stations · updated every 10 minutes',
     dataUrl:  'https://data.hub.geosphere.at/dataset/klima-v2-10min',
     doi:      null,
     doiUrl:   null,
@@ -1078,7 +1078,7 @@ function renderNearestStationBar() {
   if (pressure !== null) parts.push(`${pressure.toFixed(0)} hPa`);
 
   nearestBar.innerHTML = `
-    <span class="fc-nearest-label">\u{1F4CD} ${station.name} (${distance.toFixed(1)} km, ${station.altitude} m) \u2014 ${timeFmt}</span>
+    <span class="fc-nearest-label">Closest weather station: ${station.name} (${distance.toFixed(1)} km, ${station.altitude}\u00A0m) \u2014 ${timeFmt}</span>
     <span class="fc-nearest-values">${parts.join(' \u00B7 ')}</span>
   `;
   nearestBar.classList.remove('hidden');
