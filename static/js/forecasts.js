@@ -36,7 +36,7 @@ const MODELS = {
     resource: 'ensemble-v1-1h-2500m',
     label:    'Ensemble',
     desc:     'Probabilistic forecast showing uncertainty \u00b7 hourly steps up to 60 h \u00b7 range of likely outcomes',
-    params:   't2m_p10,t2m_p50,t2m_p90,rr_p10,rr_p50,rr_p90,u10m_p10,u10m_p50,u10m_p90,v10m_p10,v10m_p50,v10m_p90',
+    params:   't2m_p10,t2m_p50,t2m_p90,rain_p10,rain_p50,rain_p90,u10m_p10,u10m_p50,u10m_p90,v10m_p10,v10m_p50,v10m_p90',
     dataUrl:  'https://data.hub.geosphere.at/dataset/ensemble-v1-1h-2500m',
     doi:      null,
     doiUrl:   null,
@@ -492,9 +492,9 @@ function processEnsembleTimeseries(json) {
   const tempP50 = p.t2m_p50 ? p.t2m_p50.data : [];
   const tempP90 = p.t2m_p90 ? p.t2m_p90.data : [];
 
-  const rainP10 = p.rr_p10 ? p.rr_p10.data : [];
-  const rainP50 = p.rr_p50 ? p.rr_p50.data : [];
-  const rainP90 = p.rr_p90 ? p.rr_p90.data : [];
+  const rainP10 = p.rain_p10 ? p.rain_p10.data : [];
+  const rainP50 = p.rain_p50 ? p.rain_p50.data : [];
+  const rainP90 = p.rain_p90 ? p.rain_p90.data : [];
 
   const u10 = p.u10m_p10 ? p.u10m_p10.data : [];
   const u50 = p.u10m_p50 ? p.u10m_p50.data : [];
