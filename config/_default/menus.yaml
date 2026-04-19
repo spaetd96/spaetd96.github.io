@@ -28,9 +28,9 @@ main:
   - name: Contact
     url: contact_page/
     weight: 40
-  - name: Forecasts
-    url: forecasts/
-    weight: 45
+  #- name: Forecasts
+  #  url: forecasts/
+  #  weight: 45
   #- name: Experience
   #  url: experience/
   #  weight: 20

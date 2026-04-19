@@ -9,7 +9,7 @@ const MODELS = {
   arome: {
     resource: 'nwp-v1-1h-2500m',
     label:    'AROME NWP',
-    desc:     '1-hour steps · 60-hour horizon · 2.5 km resolution',
+    desc:     'Short-range weather forecast · hourly steps up to 60 h · 2.5 km grid · temperature, rain, wind, clouds',
     params:   't2m,rr_acc,u10m,v10m,tcc,ugust,vgust',
     dataUrl:  'https://data.hub.geosphere.at/dataset/nwp-v1-1h-2500m',
     doi:      '10.60669/9zm8-s664',

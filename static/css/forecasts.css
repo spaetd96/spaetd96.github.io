@@ -1,10 +1,42 @@
+/* ── Hide site chrome on full-screen forecasts page ────────────────────── */
+
+.page-header { display: none !important; }
+footer        { display: none !important; }
+
+/* ── Outer wrapper ──────────────────────────────────────────────────────── */
+
+#fc-outer {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+/* ── Custom title bar ───────────────────────────────────────────────────── */
+
+#fc-title-bar {
+  height: 40px;
+  background: #1a1a1a;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #e0e0e0;
+  letter-spacing: 0.06em;
+  flex-shrink: 0;
+  z-index: 1001;
+  position: relative;
+}
+
 /* ── Forecasts page layout ──────────────────────────────────────────────── */
 
 #forecasts-page {
   position: relative;
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 60px);
+  flex: 1;
+  min-height: 0;
   background: #111;
   font-family: inherit;
 }
@@ -15,7 +47,7 @@
   flex: 1;
   width: 100%;
   min-height: 0;
-  max-height: calc(100vh - 160px);
+  max-height: calc(100vh - 140px);
 }
 
 /* ── Info box (top-left, overlaid on map) ───────────────────────────────── */
@@ -520,8 +552,11 @@
 /* ── Responsive ─────────────────────────────────────────────────────────── */
 
 @media (max-width: 640px) {
+  #fc-title-bar { display: none; }
+  #fc-outer { height: 100vh; }
   /* Info box: anchor right edge so it can't reach the search box */
   #fc-info-box {
+    top: 10px;
     right: 165px;
     max-width: none;
     padding: 8px 10px;
