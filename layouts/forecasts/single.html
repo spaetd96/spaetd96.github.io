@@ -1,6 +1,6 @@
 {{ define "main" }}
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-<link rel="stylesheet" href="{{ "css/forecasts.css" | relURL }}" />
+<link rel="stylesheet" href="{{ "css/forecasts.css" | relURL }}?v={{ now.Unix }}" />
 
 <div id="fc-outer">
 <div id="fc-title-bar">Geosphere Data</div>
@@ -60,5 +60,5 @@
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="{{ "js/forecasts.js" | relURL }}"></script>
+<script src="{{ "js/forecasts.js" | relURL }}?v={{ now.Unix }}"></script>
 {{ end }}

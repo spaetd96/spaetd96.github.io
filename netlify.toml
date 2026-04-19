@@ -15,6 +15,16 @@
 [context.branch-deploy]
   command = "hugo --gc --minify -b $DEPLOY_PRIME_URL && npx pagefind --source 'public'"
 
+[[headers]]
+  for = "/js/*"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/css/*"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
 [[plugins]]
   package = "netlify-plugin-hugo-cache-resources"
   [plugins.inputs]

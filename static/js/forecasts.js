@@ -12,8 +12,8 @@ const MODELS = {
     desc:     'Short-range weather forecast · hourly steps up to 60 h · 2.5 km grid · temperature, rain, wind, clouds',
     params:   't2m,rr_acc,u10m,v10m,tcc,ugust,vgust',
     dataUrl:  'https://data.hub.geosphere.at/dataset/nwp-v1-1h-2500m',
-    doi:      '10.60669/9zm8-s664',
-    doiUrl:   'https://doi.org/10.60669/9zm8-s664',
+    doi:      null,
+    doiUrl:   null,
     hasCloudCover: true,
     accumulated:   true,
     hasUV:         true,
@@ -25,8 +25,8 @@ const MODELS = {
     desc:     'Very short-range nowcast · 15-min steps up to 3 h · 1 km grid · best for the next few hours',
     params:   't2m,rr,ff,dd,fx',
     dataUrl:  'https://data.hub.geosphere.at/dataset/nowcast-v1-15min-1km',
-    doi:      '10.60669/ahad-4y43',
-    doiUrl:   'https://doi.org/10.60669/ahad-4y43',
+    doi:      null,
+    doiUrl:   null,
     hasCloudCover: false,
     accumulated:   false,
     hasUV:         false,
@@ -44,8 +44,9 @@ const MODELS = {
   },
   stations: {
     label:    'Stations',
-    desc:     'Live measurements from ~260 Austrian weather stations · updated every 10 minutes',
-    dataUrl:  'https://data.hub.geosphere.at/dataset/klima-v2-10min',
+    desc:     'Current weather from ~260 Austrian TAWES stations (every 10 min) · 24 h history (hourly) from klima-v2 archive',
+    dataUrl:  'https://data.hub.geosphere.at/dataset/tawes-v1-10min',
+    dataUrl2: 'https://data.hub.geosphere.at/dataset/klima-v2-1h',
     doi:      null,
     doiUrl:   null,
     isStation: true,
@@ -54,7 +55,7 @@ const MODELS = {
 
 const TAWES_RESOURCE = 'tawes-v1-10min';
 const STATION_PARAMS = 'TL,RR,FF,DD,FFX,RF,P,SCHNEE';
-const KLIMA_V2_RESOURCE = 'klima-v2-10min';
+const KLIMA_V2_RESOURCE = 'klima-v2-1h';
 const HIST_PARAMS = 'tl,rf,p,ff';
 
 const MS_TO_KT = 1.94384;
@@ -184,10 +185,15 @@ function updateInfoBox() {
   const m = MODELS[currentModel];
   document.getElementById('fc-info-title').textContent = m.label;
   document.getElementById('fc-info-resolution').textContent = m.desc;
-  const doiPart = m.doi ? ` · <a href="${m.doiUrl}" target="_blank" rel="noopener">doi:${m.doi}</a>` : '';
-  document.getElementById('fc-info-credit').innerHTML =
-    `Data: <a href="${m.dataUrl}" target="_blank" rel="noopener">GeoSphere Austria${m.isStation ? ' TAWES' : ' ' + m.label}</a> ` +
-    `(CC BY 4.0)${doiPart}`;
+  let credit;
+  if (m.isStation) {
+    credit = `Data: <a href="${m.dataUrl}" target="_blank" rel="noopener">GeoSphere TAWES</a> (current) · ` +
+             `<a href="${m.dataUrl2}" target="_blank" rel="noopener">klima-v2-1h</a> (24 h history) (CC BY 4.0)`;
+  } else {
+    const doiPart = m.doi ? ` · <a href="${m.doiUrl}" target="_blank" rel="noopener">doi:${m.doi}</a>` : '';
+    credit = `Data: <a href="${m.dataUrl}" target="_blank" rel="noopener">GeoSphere Austria ${m.label}</a> (CC BY 4.0)${doiPart}`;
+  }
+  document.getElementById('fc-info-credit').innerHTML = credit;
 }
 
 // ── Map click ────────────────────────────────────────────────────────────────
@@ -1018,7 +1024,7 @@ function renderStationData(params, station, timestamp) {
 async function fetchStationHistory(stationId) {
   const now = new Date();
   const end = now.toISOString().substring(0, 16);
-  const start = new Date(now - 25 * 3600 * 1000).toISOString().substring(0, 16);
+  const start = new Date(now - 24 * 3600 * 1000).toISOString().substring(0, 16);
   const url = `${API_BASE}/station/historical/${KLIMA_V2_RESOURCE}?parameters=${HIST_PARAMS}&station_ids=${stationId}&start=${start}&end=${end}`;
   try {
     const json = await fetchJSON(url);
@@ -1026,16 +1032,14 @@ async function fetchStationHistory(stationId) {
     const feat = json.features?.[0];
     if (!feat) return null;
     const p = feat.properties.parameters;
-    const hourly = json.timestamps
-      .map((ts, i) => ({ d: new Date(ts), i }))
-      .filter(({ d }) => d.getMinutes() === 0);
-    if (hourly.length < 2) return null;
+    const times = json.timestamps.map(ts => new Date(ts));
+    if (times.length < 2) return null;
     return {
-      times:    hourly.map(({ d }) => d),
-      temp:     hourly.map(({ i }) => p.tl?.data[i] ?? null),
-      humidity: hourly.map(({ i }) => p.rf?.data[i] ?? null),
-      pressure: hourly.map(({ i }) => p.p?.data[i] ?? null),
-      wind:     hourly.map(({ i }) => p.ff?.data[i] ?? null),
+      times,
+      temp:     p.tl?.data ?? [],
+      humidity: p.rf?.data ?? [],
+      pressure: p.p?.data  ?? [],
+      wind:     p.ff?.data ?? [],
     };
   } catch {
     return null;
