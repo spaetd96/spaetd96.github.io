@@ -37,10 +37,31 @@ const MODELS = {
     label:    'ICON-CH1',
     desc:     'MeteoSwiss ICON-CH1-EPS · hourly up to 33 h · 1 km grid · updated every 3 h · covers Central Europe',
     dataUrl:  'https://open-meteo.com/en/docs/meteoswiss-api',
-    doi:      null,
-    doiUrl:   null,
     hasCloudCover: true,
     isOpenMeteo:   true,
+    openMeteoModel: 'meteoswiss_icon_ch1',
+    openMeteoDays:  2,
+    creditHtml: '<a href="https://www.meteoswiss.admin.ch/weather/warning-and-forecasting-systems/icon-forecasting-systems.html" target="_blank" rel="noopener">MeteoSwiss ICON-CH1-EPS</a> via <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a>',
+  },
+  icon_ch2: {
+    label:    'ICON-CH2',
+    desc:     'MeteoSwiss ICON-CH2-EPS · hourly up to 5 days · 2 km grid · updated every 6 h · covers Central Europe',
+    dataUrl:  'https://open-meteo.com/en/docs/meteoswiss-api',
+    hasCloudCover: true,
+    isOpenMeteo:   true,
+    openMeteoModel: 'meteoswiss_icon_ch2',
+    openMeteoDays:  5,
+    creditHtml: '<a href="https://www.meteoswiss.admin.ch/weather/warning-and-forecasting-systems/icon-forecasting-systems.html" target="_blank" rel="noopener">MeteoSwiss ICON-CH2-EPS</a> via <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a>',
+  },
+  icon_2i: {
+    label:    'ICON-2I',
+    desc:     'ItaliaMeteo ICON-2I · hourly up to 72 h · 2.2 km grid · updated every 12 h · covers Italy incl. South Tyrol',
+    dataUrl:  'https://open-meteo.com/en/docs/italia-meteo-arpae-api',
+    hasCloudCover: true,
+    isOpenMeteo:   true,
+    openMeteoModel: 'italia_meteo_arpae_icon_2i',
+    openMeteoDays:  3,
+    creditHtml: '<a href="https://meteohub.agenziaitaliameteo.it/app/datasets" target="_blank" rel="noopener">ItaliaMeteo ICON-2I</a> via <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a>',
   },
   ensemble: {
     resource: 'ensemble-v1-1h-2500m',
@@ -200,7 +221,7 @@ function updateInfoBox() {
     credit = `Data: <a href="${m.dataUrl}" target="_blank" rel="noopener">GeoSphere TAWES</a> (current) · ` +
              `<a href="${m.dataUrl2}" target="_blank" rel="noopener">klima-v2-1h</a> (24 h history) (CC BY 4.0)`;
   } else if (m.isOpenMeteo) {
-    credit = `Data: <a href="https://www.meteoswiss.admin.ch/weather/warning-and-forecasting-systems/icon-forecasting-systems.html" target="_blank" rel="noopener">MeteoSwiss ICON-CH1-EPS</a> via <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a> (CC BY 4.0)`;
+    credit = `Data: ${m.creditHtml} (CC BY 4.0)`;
   } else {
     const doiPart = m.doi ? ` · <a href="${m.doiUrl}" target="_blank" rel="noopener">doi:${m.doi}</a>` : '';
     credit = `Data: <a href="${m.dataUrl}" target="_blank" rel="noopener">GeoSphere Austria ${m.label}</a> (CC BY 4.0)${doiPart}`;
@@ -266,7 +287,7 @@ async function fetchAndShowForecast(lat, lng) {
   if (m.isOpenMeteo) {
     url = `${OPENMETEO_BASE}?latitude=${lat.toFixed(4)}&longitude=${lng.toFixed(4)}` +
           `&hourly=temperature_2m,rain,wind_speed_10m,wind_direction_10m,wind_gusts_10m,cloud_cover` +
-          `&models=meteoswiss_icon_ch1&forecast_days=2&wind_speed_unit=ms&timezone=UTC`;
+          `&models=${m.openMeteoModel}&forecast_days=${m.openMeteoDays}&wind_speed_unit=ms&timezone=UTC`;
   } else {
     url = `${API_BASE}/timeseries/forecast/${m.resource}` +
           `?lat_lon=${lat.toFixed(4)},${lng.toFixed(4)}&parameters=${m.params}`;
@@ -296,7 +317,14 @@ async function fetchAndShowForecast(lat, lng) {
   } catch (err) {
     console.error('Forecast fetch error:', err);
     spinner.style.display = 'none';
-    loadingSpan.textContent = 'Error loading forecast data. The location may be outside the model domain.';
+    const status = err.message?.match(/HTTP (\d+)/)?.[1];
+    if (status === '503' || status === '502' || status === '500') {
+      loadingSpan.textContent = `⚠️ The ${m.label} data source is temporarily unavailable. Please try again later or select a different model.`;
+    } else if (status === '404' || status === '400') {
+      loadingSpan.textContent = `⚠️ No ${m.label} data available for this location. The point may be outside the model domain.`;
+    } else {
+      loadingSpan.textContent = `⚠️ Error loading ${m.label} forecast data. The data source may be temporarily unavailable or the location may be outside the model domain.`;
+    }
   }
 }
 
