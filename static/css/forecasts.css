@@ -532,8 +532,6 @@ footer        { display: none !important; }
   letter-spacing: 0.02em;
   text-align: left !important;
   padding-left: 2px !important;
-  white-space: nowrap;
-  overflow: visible;
 }
 
 /* Hours row */
