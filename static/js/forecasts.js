@@ -999,7 +999,7 @@ function renderEnsembleCharts(data) {
 
 function makeEnsembleChart({ title, yUnit, times, p10, p50, p90, color, bandFill = null, yMin0 = false, yMinSpan = 0, yFixed = false, yLo: yLoFixed = 0, yHi: yHiFixed = 360, yTickFmt = v => v }) {
   const W = 700, H = 155;
-  const ML = 46, MR = 50, MT = 22, MB = 32;
+  const ML = 46, MR = 50, MT = 22, MB = 38;
   const CW = W - ML - MR, CH = H - MT - MB;
   const n = times.length;
 
@@ -1049,6 +1049,8 @@ function makeEnsembleChart({ title, yUnit, times, p10, p50, p90, color, bandFill
   }
 
   // X-axis time marks
+  // Two-row layout: hour ticks on the first row, day labels on the second row,
+  // so a long day name (e.g. "Mon, Apr 20") never overlaps a 06/12/18 tick.
   const tzOpt = displayTZ === 'UTC' ? 'UTC' : undefined;
   const getH  = d => displayTZ === 'UTC' ? d.getUTCHours()   : d.getHours();
   const getDK = d => d.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short', timeZone: tzOpt });
@@ -1058,16 +1060,25 @@ function makeEnsembleChart({ title, yUnit, times, p10, p50, p90, color, bandFill
     const dk = getDK(times[i]);
     const x  = xOf(i);
     if (dk !== lastDK) {
+      // Day boundary: vertical rule + day label on lower row
       svg.appendChild(el('line', { x1: x, x2: x, y1: MT, y2: MT + CH + 5, stroke: 'rgba(255,255,255,0.22)', 'stroke-width': '1' }));
       svg.appendChild(el('text', {
-        x: x + 3, y: MT + CH + 18,
+        x: x + 3, y: MT + CH + 26,
         fill: '#bdbdbd', 'font-size': '9', 'font-family': 'inherit', 'font-weight': '600',
       }, dk));
       lastDK = dk;
+      // Also draw the "00" hour tick on the upper row (skip only if it's the very
+      // first datapoint, where there's no room to the left)
+      if (i > 0) {
+        svg.appendChild(el('text', {
+          x, y: MT + CH + 13, 'text-anchor': 'middle',
+          fill: '#5a5a5a', 'font-size': '8', 'font-family': 'inherit',
+        }, '00'));
+      }
     } else if (h % 6 === 0) {
       svg.appendChild(el('line', { x1: x, x2: x, y1: MT + CH, y2: MT + CH + 4, stroke: 'rgba(255,255,255,0.12)', 'stroke-width': '1' }));
       svg.appendChild(el('text', {
-        x, y: MT + CH + 15, 'text-anchor': 'middle',
+        x, y: MT + CH + 13, 'text-anchor': 'middle',
         fill: '#5a5a5a', 'font-size': '8', 'font-family': 'inherit',
       }, String(h).padStart(2, '0')));
     }
