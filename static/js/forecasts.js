@@ -426,24 +426,31 @@ async function fetchMergedIconCH(lat, lng) {
   const d1 = processOpenMeteoTimeseries(json1);
   const d2 = processOpenMeteoTimeseries(json2);
 
-  // Find the last CH1 timestamp
+  // Find the last CH1 timestamp that has valid (non-null) temperature data.
+  // Open-Meteo may return the full requested days with nulls after the model's
+  // actual horizon (~33 h for CH1 with forecast_days=2 → 48 h requested).
+  // Using the last null-padded timestamp as the merge point would leave a gap
+  // of null-filled hours between CH1 and CH2.
   if (d1.times.length === 0) return d2;
-  const ch1End = d1.times[d1.times.length - 1].getTime();
+  let ch1EndIdx = d1.times.length - 1;
+  while (ch1EndIdx > 0 && (d1.temp[ch1EndIdx] === null || !isFinite(d1.temp[ch1EndIdx]))) ch1EndIdx--;
+  const ch1Count = ch1EndIdx + 1; // number of valid CH1 entries to keep
+  const ch1End = d1.times[ch1EndIdx].getTime();
 
-  // Append CH2 timesteps that are after CH1's last time
+  // Append CH2 timesteps that are strictly after the last valid CH1 time
   const mergeStart = d2.times.findIndex(t => t.getTime() > ch1End);
   if (mergeStart < 0) return { ...d1, transitionIndex: null };
 
-  const transitionIndex = d1.times.length; // index where CH2 data starts
+  const transitionIndex = ch1Count; // index where CH2 data starts
 
   const merged = {
-    times:      [...d1.times,      ...d2.times.slice(mergeStart)],
-    temp:       [...d1.temp,       ...d2.temp.slice(mergeStart)],
-    rain:       [...d1.rain,       ...d2.rain.slice(mergeStart)],
-    windSpeed:  [...d1.windSpeed,  ...d2.windSpeed.slice(mergeStart)],
-    windDir:    [...d1.windDir,    ...d2.windDir.slice(mergeStart)],
-    gustSpeed:  [...(d1.gustSpeed || []), ...(d2.gustSpeed || []).slice(mergeStart)],
-    cloudCover: [...(d1.cloudCover || []), ...(d2.cloudCover || []).slice(mergeStart)],
+    times:      [...d1.times.slice(0, ch1Count),      ...d2.times.slice(mergeStart)],
+    temp:       [...d1.temp.slice(0, ch1Count),       ...d2.temp.slice(mergeStart)],
+    rain:       [...d1.rain.slice(0, ch1Count),       ...d2.rain.slice(mergeStart)],
+    windSpeed:  [...d1.windSpeed.slice(0, ch1Count),  ...d2.windSpeed.slice(mergeStart)],
+    windDir:    [...d1.windDir.slice(0, ch1Count),    ...d2.windDir.slice(mergeStart)],
+    gustSpeed:  [...(d1.gustSpeed || []).slice(0, ch1Count), ...(d2.gustSpeed || []).slice(mergeStart)],
+    cloudCover: [...(d1.cloudCover || []).slice(0, ch1Count), ...(d2.cloudCover || []).slice(mergeStart)],
     transitionIndex,
     transitionLabel: 'ICON-CH2',
   };
@@ -751,7 +758,11 @@ function renderForecastTableInto(table, data) {
       const td = document.createElement('td');
       if (i === transitionIndex) {
         td.className = 'fc-transition-marker';
-        td.textContent = `← ${transitionLabel}`;
+        // Wrap in a span so the text overflows absolutely and does not
+        // widen the column (which would push all adjacent cells apart).
+        const span = document.createElement('span');
+        span.textContent = `← ${transitionLabel}`;
+        td.appendChild(span);
       }
       markerRow.appendChild(td);
     }
