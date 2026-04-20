@@ -3,21 +3,20 @@
 <link rel="stylesheet" href="{{ "css/forecasts.css" | relURL }}?v={{ now.Unix }}" />
 
 <div id="fc-outer">
-<div id="fc-title-bar">Geosphere Data</div>
+<div id="fc-title-bar">Weather Data</div>
 <div id="forecasts-page">
 
   {{/* Top-left info box with model switcher */}}
   <div id="fc-info-box">
-    <div id="fc-info-title">AROME NWP</div>
+    <div id="fc-info-title">IFS HRES</div>
     <div id="fc-model-wrapper">
       <label for="fc-model-select">Data</label>
       <select id="fc-model-select">
-        <option value="arome" selected>AROME NWP (60 h, 1 h)</option>
-        <option value="icon_ch1">ICON-CH1 (33 h, 1 h)</option>
-        <option value="icon_ch2">ICON-CH2 (5 days, 1 h)</option>
-        <option value="icon_2i">ICON-2I Italy (72 h, 1 h)</option>
+        <option value="ifs" selected>IFS HRES (5 days, 1 h)</option>
+        <option value="icon_ch">ICON-CH (5 days, 1 h)</option>
+        <option value="arome">AROME (60 h, 1 h)</option>
+        <option value="compare">Compare models</option>
         <option value="inca">INCA Nowcast (3 h, 15 min)</option>
-        <option value="ensemble">Ensemble (60 h, 1 h)</option>
         <option value="stations">Stations (current)</option>
       </select>
     </div>
@@ -55,7 +54,11 @@
     <div id="fc-forecast-scroll">
       <table id="fc-forecast-table"></table>
     </div>
+    <div id="fc-ensemble-btn-wrap" class="hidden">
+      <button id="fc-ensemble-btn">Show AROME ensemble range</button>
+    </div>
     <div id="fc-ensemble-scroll" class="hidden"></div>
+    <div id="fc-compare-scroll" class="hidden"></div>
     <div id="fc-station-data" class="hidden"></div>
   </div>
 

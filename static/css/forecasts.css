@@ -671,3 +671,120 @@ footer        { display: none !important; }
     font-size: 0.68rem;
   }
 }
+
+/* ── Transition marker (ICON-CH1 → CH2) ────────────────────────────────── */
+
+.fc-row-transition td {
+  padding: 0;
+  height: 0;
+}
+
+.fc-transition-marker {
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: rgba(255, 200, 50, 0.85);
+  letter-spacing: 0.04em;
+  padding: 1px 4px !important;
+  border-left: 2px solid rgba(255, 200, 50, 0.6) !important;
+  white-space: nowrap;
+}
+
+/* ── Ensemble button ───────────────────────────────────────────────────── */
+
+#fc-ensemble-btn-wrap {
+  padding: 6px 12px;
+  text-align: center;
+}
+
+#fc-ensemble-btn {
+  background: rgba(239, 154, 154, 0.15);
+  border: 1px solid rgba(239, 154, 154, 0.35);
+  border-radius: 6px;
+  color: #ef9a9a;
+  padding: 6px 16px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+#fc-ensemble-btn:hover:not(:disabled) {
+  background: rgba(239, 154, 154, 0.25);
+}
+#fc-ensemble-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* ── History button ────────────────────────────────────────────────────── */
+
+.fc-hist-btn-wrap {
+  padding: 6px 12px;
+  text-align: center;
+}
+
+.fc-hist-btn {
+  background: rgba(100, 181, 246, 0.15);
+  border: 1px solid rgba(100, 181, 246, 0.35);
+  border-radius: 6px;
+  color: #64b5f6;
+  padding: 6px 16px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.fc-hist-btn:hover:not(:disabled) {
+  background: rgba(100, 181, 246, 0.25);
+}
+.fc-hist-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* ── Station credit ────────────────────────────────────────────────────── */
+
+.fc-station-credit {
+  padding: 4px 12px 8px;
+  font-size: 0.72rem;
+  color: #757575;
+}
+.fc-station-credit a {
+  color: #90a4ae;
+  text-decoration: none;
+}
+.fc-station-credit a:hover {
+  text-decoration: underline;
+}
+
+/* ── Compare mode ──────────────────────────────────────────────────────── */
+
+#fc-compare-scroll {
+  overflow-y: auto;
+  max-height: calc(100svh - 200px);
+  padding: 0 4px;
+}
+
+.fc-compare-section {
+  margin-bottom: 6px;
+}
+
+.fc-compare-section .fc-section-heading {
+  margin: 8px 0 2px 8px;
+}
+
+.fc-compare-section .fc-forecast-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.fc-compare-section .fc-forecast-table {
+  border-collapse: collapse;
+  white-space: nowrap;
+  font-size: 0.72rem;
+}
+
+.fc-compare-error {
+  padding: 10px 14px;
+  color: #ef9a9a;
+  font-size: 0.8rem;
+}
