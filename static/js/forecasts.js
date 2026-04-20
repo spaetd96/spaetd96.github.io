@@ -179,11 +179,13 @@ function initControls() {
 
   document.getElementById('fc-forecast-close').addEventListener('click', () => {
     document.getElementById('fc-forecast-panel').classList.add('hidden');
+    resetPanelContent();
     if (pinMarker) { pinMarker.remove(); pinMarker = null; }
     if (nearestStationMarker) { nearestStationMarker.remove(); nearestStationMarker = null; }
     lastNearestStation = null;
     if (selectedStationMarker) {
-      selectedStationMarker.setStyle({ color: '#ff9800', fillColor: '#ff9800' });
+      const origColor = selectedStationMarker._origColor || '#ff9800';
+      selectedStationMarker.setStyle({ color: origColor, fillColor: origColor });
       selectedStationMarker = null;
     }
     document.getElementById('fc-click-hint').classList.remove('hidden');
@@ -206,6 +208,18 @@ function initControls() {
     const ll = pinMarker.getLatLng();
     fetchAndShowEnsemble(ll.lat, ll.lng);
   });
+}
+
+/** Hide every content section inside the panel and remove size classes. */
+function resetPanelContent() {
+  document.getElementById('fc-forecast-scroll').classList.add('hidden');
+  document.getElementById('fc-ensemble-scroll').classList.add('hidden');
+  document.getElementById('fc-ensemble-btn-wrap').classList.add('hidden');
+  document.getElementById('fc-compare-scroll').classList.add('hidden');
+  document.getElementById('fc-station-data').classList.add('hidden');
+  document.getElementById('fc-nearest-station').classList.add('hidden');
+  const panel = document.getElementById('fc-forecast-panel');
+  panel.classList.remove('fc-panel-ensemble', 'fc-panel-compare');
 }
 
 function reRenderCurrent() {
@@ -272,16 +286,10 @@ async function fetchAndShowForecast(lat, lng) {
   const ensembleBtnWrap = document.getElementById('fc-ensemble-btn-wrap');
   const compareScroll  = document.getElementById('fc-compare-scroll');
   const stationDataEl  = document.getElementById('fc-station-data');
-  const nearestBar     = document.getElementById('fc-nearest-station');
 
   panel.classList.remove('hidden');
   loading.classList.remove('hidden');
-  scroll.classList.add('hidden');
-  ensembleScroll.classList.add('hidden');
-  ensembleBtnWrap.classList.add('hidden');
-  compareScroll.classList.add('hidden');
-  stationDataEl.classList.add('hidden');
-  nearestBar.classList.add('hidden');
+  resetPanelContent();
   lastNearestStation = null;
 
   const m   = MODELS[currentModel];
@@ -289,12 +297,6 @@ async function fetchAndShowForecast(lat, lng) {
   // Toggle panel size class based on model type
   if (m.isCompare) {
     panel.classList.add('fc-panel-compare');
-    panel.classList.remove('fc-panel-ensemble');
-  } else if (m.isEnsemble) {
-    panel.classList.add('fc-panel-ensemble');
-    panel.classList.remove('fc-panel-compare');
-  } else {
-    panel.classList.remove('fc-panel-ensemble', 'fc-panel-compare');
   }
 
   // Reset loading UI in case of previous error
@@ -386,6 +388,7 @@ async function fetchAndShowForecast(lat, lng) {
 // ── Fetch + show AROME ensemble (button-triggered) ───────────────────────────
 
 async function fetchAndShowEnsemble(lat, lng) {
+  const panel = document.getElementById('fc-forecast-panel');
   const btn = document.getElementById('fc-ensemble-btn');
   const ensembleScroll = document.getElementById('fc-ensemble-scroll');
   btn.textContent = 'Loading ensemble…';
@@ -398,6 +401,7 @@ async function fetchAndShowEnsemble(lat, lng) {
   try {
     const json = await fetchJSON(url);
     const data = processEnsembleTimeseries(json);
+    panel.classList.add('fc-panel-ensemble');
     ensembleScroll.classList.remove('hidden');
     renderEnsembleCharts(data);
     btn.textContent = 'Ensemble range shown below ↓';
@@ -539,15 +543,15 @@ function renderCompareView(models) {
 
   // Sync horizontal scroll across all three forecast tables
   const scrollWrappers = [...container.querySelectorAll('.fc-forecast-scroll')];
-  let syncing = false;
+  let activeScroller = null;
   for (const w of scrollWrappers) {
     w.addEventListener('scroll', () => {
-      if (syncing) return;
-      syncing = true;
+      if (activeScroller && activeScroller !== w) return;
+      activeScroller = w;
       for (const other of scrollWrappers) {
         if (other !== w) other.scrollLeft = w.scrollLeft;
       }
-      syncing = false;
+      requestAnimationFrame(() => { activeScroller = null; });
     }, { passive: true });
   }
 }
@@ -1274,17 +1278,11 @@ async function onStationClick(station, marker) {
 
   const panel = document.getElementById('fc-forecast-panel');
   const loading = document.getElementById('fc-forecast-loading');
-  const scroll = document.getElementById('fc-forecast-scroll');
-  const ensembleScroll = document.getElementById('fc-ensemble-scroll');
   const stationDataEl = document.getElementById('fc-station-data');
-  const nearestBar = document.getElementById('fc-nearest-station');
 
-  panel.classList.remove('hidden', 'fc-panel-ensemble');
+  panel.classList.remove('hidden');
+  resetPanelContent();
   loading.classList.remove('hidden');
-  scroll.classList.add('hidden');
-  ensembleScroll.classList.add('hidden');
-  stationDataEl.classList.add('hidden');
-  nearestBar.classList.add('hidden');
   document.getElementById('fc-click-hint').classList.add('hidden');
   lastHistData = null;
 
@@ -1327,16 +1325,11 @@ function onSiagStationClick(station, marker) {
 function renderSiagStationData(station) {
   const stationDataEl = document.getElementById('fc-station-data');
   const panel = document.getElementById('fc-forecast-panel');
-  const scroll = document.getElementById('fc-forecast-scroll');
-  const ensembleScroll = document.getElementById('fc-ensemble-scroll');
   const loading = document.getElementById('fc-forecast-loading');
-  const nearestBar = document.getElementById('fc-nearest-station');
 
-  panel.classList.remove('hidden', 'fc-panel-ensemble');
+  panel.classList.remove('hidden');
+  resetPanelContent();
   loading.classList.add('hidden');
-  scroll.classList.add('hidden');
-  ensembleScroll.classList.add('hidden');
-  nearestBar.classList.add('hidden');
   document.getElementById('fc-click-hint').classList.add('hidden');
 
   document.getElementById('fc-forecast-location').textContent =

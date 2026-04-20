@@ -345,7 +345,7 @@ footer        { display: none !important; }
 }
 
 #fc-forecast-panel.fc-panel-ensemble {
-  max-height: 68vh;
+  max-height: 80vh;
 }
 
 #fc-forecast-panel.fc-panel-compare {
@@ -636,7 +636,7 @@ footer        { display: none !important; }
     max-height: 65vh;
   }
   #fc-forecast-panel.fc-panel-ensemble {
-    max-height: 65vh;
+    max-height: 85vh;
   }
   #fc-forecast-panel.fc-panel-compare {
     max-height: 85vh;
