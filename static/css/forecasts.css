@@ -530,6 +530,10 @@ footer        { display: none !important; }
   color: #ffffff !important;
   font-size: 0.82rem !important;
   letter-spacing: 0.02em;
+  text-align: left !important;
+  padding-left: 2px !important;
+  white-space: nowrap;
+  overflow: visible;
 }
 
 /* Hours row */

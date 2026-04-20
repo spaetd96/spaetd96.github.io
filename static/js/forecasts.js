@@ -707,19 +707,6 @@ function renderForecastTableInto(table, data) {
   const dayKey = d => d.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short', timeZone: tz });
   const tzSuffix = displayTZ === 'UTC' ? 'UTC' : 'local';
 
-  // Group timesteps by calendar day
-  const dayGroups = [];
-  let currentDay = null;
-  for (let i = 0; i < n; i++) {
-    const k = dayKey(times[i]);
-    if (k !== currentDay) {
-      dayGroups.push({ label: k, count: 1 });
-      currentDay = k;
-    } else {
-      dayGroups[dayGroups.length - 1].count++;
-    }
-  }
-
   // Helper: mark no-data cells (from unified time axis fill)
   const applyNoData = (td, val) => {
     if (val === null) td.classList.add('fc-no-data');
@@ -733,16 +720,23 @@ function renderForecastTableInto(table, data) {
   };
 
   // ── Row 1: Day headers ──
+  // One cell per timestep; label is placed only at the column where hour == 00
+  // so the day name always appears at the start of the day, not at midday.
   const dayRow = document.createElement('tr');
   dayRow.className = 'fc-row-days';
   const dayLabel = document.createElement('td');
   dayLabel.className = 'fc-label';
   dayRow.appendChild(dayLabel);
-  for (const g of dayGroups) {
+  const labeledDays = new Set();
+  for (let i = 0; i < n; i++) {
     const td = document.createElement('td');
-    td.className = 'fc-day-cell';
-    td.colSpan = g.count;
-    td.textContent = g.label;
+    const h = getH(times[i]);
+    const k = dayKey(times[i]);
+    if (h === 0 && !labeledDays.has(k)) {
+      td.className = 'fc-day-cell';
+      td.textContent = k;
+      labeledDays.add(k);
+    }
     dayRow.appendChild(td);
   }
   table.appendChild(dayRow);
