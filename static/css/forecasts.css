@@ -193,8 +193,7 @@ footer        { display: none !important; }
 
 #fc-station-data {
   padding: 12px 16px;
-  overflow-y: auto;
-  flex: 1;
+  overflow-y: visible;
 }
 
 .fc-station-time {
@@ -349,6 +348,10 @@ footer        { display: none !important; }
   max-height: 68vh;
 }
 
+#fc-forecast-panel.fc-panel-compare {
+  max-height: 75vh;
+}
+
 #fc-forecast-header {
   display: flex;
   align-items: center;
@@ -422,25 +425,34 @@ footer        { display: none !important; }
   font-size: 0.85rem;
 }
 
+/* Main scrollable body (holds forecast table, ensemble, compare, station data) */
+
+#fc-panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.2) transparent;
+}
+
 /* Scrollable table area */
 
 #fc-forecast-scroll {
   overflow-x: auto;
   overflow-y: hidden;
-  flex: 1;
+  flex-shrink: 0;
   scrollbar-width: thin;
   scrollbar-color: rgba(255,255,255,0.2) transparent;
 }
 
-/* Ensemble charts scroll area */
+/* Ensemble charts area (parent body scrolls) */
 
 #fc-ensemble-scroll {
   overflow-x: hidden;
-  overflow-y: auto;
-  flex: 1;
+  overflow-y: visible;
   padding: 8px 14px 12px;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255,255,255,0.2) transparent;
 }
 
 #fc-ensemble-scroll::-webkit-scrollbar {
@@ -624,6 +636,9 @@ footer        { display: none !important; }
     max-height: 65vh;
   }
   #fc-forecast-panel.fc-panel-ensemble {
+    max-height: 65vh;
+  }
+  #fc-forecast-panel.fc-panel-compare {
     max-height: 85vh;
   }
   #fc-forecast-header {
@@ -759,8 +774,7 @@ footer        { display: none !important; }
 /* ── Compare mode ──────────────────────────────────────────────────────── */
 
 #fc-compare-scroll {
-  overflow-y: auto;
-  max-height: calc(100svh - 200px);
+  overflow-y: visible;
   padding: 0 4px;
 }
 

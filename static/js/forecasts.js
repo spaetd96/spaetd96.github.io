@@ -287,10 +287,14 @@ async function fetchAndShowForecast(lat, lng) {
   const m   = MODELS[currentModel];
 
   // Toggle panel size class based on model type
-  if (m.isEnsemble) {
-    panel.classList.add('fc-panel-ensemble');
-  } else {
+  if (m.isCompare) {
+    panel.classList.add('fc-panel-compare');
     panel.classList.remove('fc-panel-ensemble');
+  } else if (m.isEnsemble) {
+    panel.classList.add('fc-panel-ensemble');
+    panel.classList.remove('fc-panel-compare');
+  } else {
+    panel.classList.remove('fc-panel-ensemble', 'fc-panel-compare');
   }
 
   // Reset loading UI in case of previous error
@@ -532,6 +536,20 @@ function renderCompareView(models) {
     }
     container.appendChild(section);
   }
+
+  // Sync horizontal scroll across all three forecast tables
+  const scrollWrappers = [...container.querySelectorAll('.fc-forecast-scroll')];
+  let syncing = false;
+  for (const w of scrollWrappers) {
+    w.addEventListener('scroll', () => {
+      if (syncing) return;
+      syncing = true;
+      for (const other of scrollWrappers) {
+        if (other !== w) other.scrollLeft = w.scrollLeft;
+      }
+      syncing = false;
+    }, { passive: true });
+  }
 }
 
 // ── Process Open-Meteo API response ─────────────────────────────────────────
@@ -670,19 +688,13 @@ function renderForecastTableInto(table, data) {
     const mLabel = document.createElement('td');
     mLabel.className = 'fc-label';
     markerRow.appendChild(mLabel);
-    // Empty cells before transition
-    if (transitionIndex > 0) {
-      const tdBefore = document.createElement('td');
-      tdBefore.colSpan = transitionIndex;
-      markerRow.appendChild(tdBefore);
-    }
-    // Transition label cell
-    if (n - transitionIndex > 0) {
-      const tdMarker = document.createElement('td');
-      tdMarker.colSpan = n - transitionIndex;
-      tdMarker.className = 'fc-transition-marker';
-      tdMarker.textContent = `← ${transitionLabel}`;
-      markerRow.appendChild(tdMarker);
+    for (let i = 0; i < n; i++) {
+      const td = document.createElement('td');
+      if (i === transitionIndex) {
+        td.className = 'fc-transition-marker';
+        td.textContent = `← ${transitionLabel}`;
+      }
+      markerRow.appendChild(td);
     }
     table.appendChild(markerRow);
   }
