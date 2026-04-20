@@ -506,7 +506,57 @@ async function fetchCompareData(lat, lng) {
     results.push({ label: 'AROME', error: aromeJson.reason?.message || 'Failed to load' });
   }
 
+  // Remap all datasets to a shared unified time axis so columns align perfectly
+  unifyCompareTimes(results);
+
   return results;
+}
+
+/**
+ * Remaps every compare entry to the same sorted union of all timestamps.
+ * Entries that have no value for a given timestep get null (renders as —).
+ * This ensures every table has identical column count and column widths,
+ * making scrollLeft-based sync pixel-perfect.
+ */
+function unifyCompareTimes(results) {
+  // Collect union of all timestamps (by ms)
+  const msSet = new Set();
+  for (const entry of results) {
+    if (!entry.error && entry.data?.times) {
+      for (const t of entry.data.times) msSet.add(t.getTime());
+    }
+  }
+  if (msSet.size === 0) return;
+
+  const unified = [...msSet].sort((a, b) => a - b).map(ms => new Date(ms));
+
+  for (const entry of results) {
+    if (entry.error || !entry.data) continue;
+    const d = entry.data;
+
+    // Remember transition time before index changes
+    const transitionTimeMs = d.transitionIndex != null
+      ? d.times[d.transitionIndex]?.getTime()
+      : null;
+
+    const indexMap = new Map(d.times.map((t, i) => [t.getTime(), i]));
+    const remap = arr => arr
+      ? unified.map(t => { const i = indexMap.get(t.getTime()); return i !== undefined ? arr[i] : null; })
+      : null;
+
+    d.times       = unified;
+    d.temp        = remap(d.temp);
+    d.rain        = remap(d.rain);
+    d.windSpeed   = remap(d.windSpeed);
+    d.windDir     = remap(d.windDir);
+    d.gustSpeed   = remap(d.gustSpeed);
+    d.cloudCover  = remap(d.cloudCover);
+
+    // Remap transitionIndex to position in unified axis
+    if (transitionTimeMs != null) {
+      d.transitionIndex = unified.findIndex(t => t.getTime() === transitionTimeMs);
+    }
+  }
 }
 
 // ── Render compare view ──────────────────────────────────────────────────────
