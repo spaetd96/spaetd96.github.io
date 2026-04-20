@@ -687,6 +687,14 @@ footer        { display: none !important; }
   }
 }
 
+/* ── No-data cells (unified time axis fill beyond model forecast range) ── */
+
+.fc-no-data {
+  background: rgba(255,255,255,0.02) !important;
+  color: transparent !important;
+  pointer-events: none;
+}
+
 /* ── Transition marker (ICON-CH1 → CH2) ────────────────────────────────── */
 
 .fc-row-transition td {

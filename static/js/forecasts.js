@@ -713,6 +713,11 @@ function renderForecastTableInto(table, data) {
     }
   }
 
+  // Helper: mark no-data cells (from unified time axis fill)
+  const applyNoData = (td, val) => {
+    if (val === null) td.classList.add('fc-no-data');
+  };
+
   // Helper: apply transition border to a cell at the transition point
   const applyTransitionBorder = (td, i) => {
     if (transitionIndex != null && i === transitionIndex) {
@@ -780,7 +785,10 @@ function renderForecastTableInto(table, data) {
     iconRow.appendChild(iconLabel);
     for (let i = 0; i < n; i++) {
       const td = document.createElement('td');
-      td.textContent = weatherIcon(cloudCover[i], rain[i], getH(times[i]));
+      if (cloudCover[i] !== null) {
+        td.textContent = weatherIcon(cloudCover[i], rain[i], getH(times[i]));
+      }
+      applyNoData(td, cloudCover[i]);
       applyTransitionBorder(td, i);
       iconRow.appendChild(td);
     }
@@ -798,12 +806,11 @@ function renderForecastTableInto(table, data) {
     const td = document.createElement('td');
     td.className = 'fc-temp-cell';
     const val = temp[i];
-    if (isFinite(val)) {
+    if (val !== null && isFinite(val)) {
       td.textContent = Math.round(val) + '°';
       td.style.backgroundColor = tempColor(val);
-    } else {
-      td.textContent = '—';
     }
+    applyNoData(td, val);
     applyTransitionBorder(td, i);
     tempRow.appendChild(td);
   }
@@ -820,12 +827,13 @@ function renderForecastTableInto(table, data) {
     const td = document.createElement('td');
     td.className = 'fc-rain-cell';
     const val = rain[i];
-    if (isFinite(val) && val > 0.05) {
+    if (val !== null && isFinite(val) && val > 0.05) {
       td.textContent = val < 10 ? val.toFixed(1) : Math.round(val);
       const intensity = Math.min(1, val / 10);
       td.style.backgroundColor = `rgba(30, 136, 229, ${(0.15 + intensity * 0.55).toFixed(2)})`;
       td.style.color = '#fff';
     }
+    applyNoData(td, val);
     applyTransitionBorder(td, i);
     rainRow.appendChild(td);
   }
@@ -843,12 +851,13 @@ function renderForecastTableInto(table, data) {
     td.className = 'fc-wind-cell';
     const speed = windSpeed[i];
     const dir   = windDir[i];
-    if (isFinite(speed)) {
+    if (speed !== null && isFinite(speed)) {
       td.appendChild(windArrowSVG(speed, dir));
       const span = document.createElement('span');
       span.textContent = Math.round(toUnit(speed));
       td.appendChild(span);
     }
+    applyNoData(td, speed);
     applyTransitionBorder(td, i);
     windRow.appendChild(td);
   }
@@ -866,10 +875,11 @@ function renderForecastTableInto(table, data) {
       const td = document.createElement('td');
       td.className = 'fc-gust-cell';
       const gust = gustSpeed[i];
-      if (isFinite(gust) && gust > 0) {
+      if (gust !== null && isFinite(gust) && gust > 0) {
         td.textContent = Math.round(toUnit(gust));
         td.style.color = windColor(gust);
       }
+      applyNoData(td, gust);
       applyTransitionBorder(td, i);
       gustRow.appendChild(td);
     }
