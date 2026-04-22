@@ -74,7 +74,7 @@ const MODELS = {
   },
   stations: {
     label:    'Stations',
-    desc:     'Current weather from ~260 Austrian TAWES stations + South Tyrol (SIAG) stations · 24 h history for Austrian stations',
+    desc:     'Current weather from ~260 Austrian TAWES stations + South Tyrol (SIAG) stations + Trentino (Meteotrentino) stations · 24 h history for Austrian stations',
     dataUrl:  'https://data.hub.geosphere.at/dataset/tawes-v1-10min',
     dataUrl2: 'https://data.hub.geosphere.at/dataset/klima-v2-1h',
     doi:      null,
@@ -116,6 +116,7 @@ let lastForecastData = null;
 let lastHistData = null;
 let stationMeta = null;
 let siagStations = null;
+let trentinoStations = null;
 let stationMarkerLayer = null;
 let nearestStationMarker = null;
 let selectedStationMarker = null;
@@ -232,6 +233,8 @@ function reRenderCurrent() {
     renderStationData(lastForecastData.params, lastForecastData.station, lastForecastData.timestamp);
   } else if (lastForecastData.isSiag) {
     renderSiagStationData(lastForecastData.station);
+  } else if (lastForecastData.isTrentino) {
+    renderTrentinoStationData(lastForecastData.stationData, lastForecastData.station);
   } else {
     renderForecastTable(lastForecastData);
     if (lastNearestStation) renderNearestStationBar();
@@ -248,7 +251,8 @@ function updateInfoBox() {
   } else if (m.isStation) {
     credit = `Data: <a href="${m.dataUrl}" target="_blank" rel="noopener">GeoSphere TAWES</a> (current) · ` +
              `<a href="${m.dataUrl2}" target="_blank" rel="noopener">klima-v2-1h</a> (24 h history) · ` +
-             `<a href="https://weather.province.bz.it/" target="_blank" rel="noopener">SIAG South Tyrol</a> (CC0)</a>`;
+             `<a href="https://weather.province.bz.it/" target="_blank" rel="noopener">SIAG South Tyrol</a> (CC0) · ` +
+             `<a href="https://www.meteotrentino.it/" target="_blank" rel="noopener">Meteotrentino</a> (CC BY 4.0)`;
   } else if (m.isOpenMeteo) {
     credit = `Data: ${m.creditHtml} (CC BY 4.0)`;
   } else {
@@ -1315,7 +1319,11 @@ async function ensureSiagStations() {
 async function showStationMarkers() {
   stationMarkerLayer.clearLayers();
   try {
-    const [stations, siag] = await Promise.all([ensureStationMeta(), ensureSiagStations().catch(() => [])]);
+    const [stations, siag, trentino] = await Promise.all([
+      ensureStationMeta(),
+      ensureSiagStations().catch(() => []),
+      ensureTrentinoStations().catch(() => []),
+    ]);
     for (const s of stations) {
       const marker = L.circleMarker([s.lat, s.lon], {
         radius: 5,
@@ -1339,6 +1347,19 @@ async function showStationMarkers() {
       });
       marker.bindTooltip(`${s.name} (South Tyrol)`, { direction: 'top', offset: [0, -6] });
       marker.on('click', () => onSiagStationClick(s, marker));
+      stationMarkerLayer.addLayer(marker);
+    }
+    for (const s of trentino) {
+      if (!isFinite(s.lat) || !isFinite(s.lon)) continue;
+      const marker = L.circleMarker([s.lat, s.lon], {
+        radius: 5,
+        color: '#29b6f6',
+        fillColor: '#29b6f6',
+        fillOpacity: 0.7,
+        weight: 1.5,
+      });
+      marker.bindTooltip(`${s.name} (Trentino)`, { direction: 'top', offset: [0, -6] });
+      marker.on('click', () => onTrentinoStationClick(s, marker));
       stationMarkerLayer.addLayer(marker);
     }
   } catch (err) {
@@ -1391,6 +1412,181 @@ async function onStationClick(station, marker) {
     spinner.style.display = 'none';
     loadingSpan.textContent = 'Error loading station data.';
   }
+}
+
+async function ensureTrentinoStations() {
+  if (trentinoStations) return trentinoStations;
+  const xml = await fetchXML('https://dati.meteotrentino.it/service.asmx/getListOfMeteoStations');
+  const stations = [];
+  for (const el of xml.querySelectorAll('pointOfMeasureInfo')) {
+    const enddate = el.querySelector('enddate')?.textContent?.trim();
+    if (enddate && /\d/.test(enddate)) continue; // inactive station
+    const code = el.querySelector('code')?.textContent?.trim();
+    const name = el.querySelector('name')?.textContent?.trim();
+    const elevation = parseFloat(el.querySelector('elevation')?.textContent);
+    const lat = parseFloat(el.querySelector('latitude')?.textContent);
+    const lon = parseFloat(el.querySelector('longitude')?.textContent);
+    if (!code || !name || !isFinite(lat) || !isFinite(lon)) continue;
+    stations.push({ code, name, elevation, lat, lon });
+  }
+  trentinoStations = stations;
+  return stations;
+}
+
+async function onTrentinoStationClick(station, marker) {
+  if (selectedStationMarker) {
+    const origColor = selectedStationMarker._origColor || '#ff9800';
+    selectedStationMarker.setStyle({ color: origColor, fillColor: origColor });
+  }
+  marker._origColor = '#29b6f6';
+  marker.setStyle({ color: '#26a69a', fillColor: '#26a69a' });
+  selectedStationMarker = marker;
+  lastHistData = null;
+
+  const panel = document.getElementById('fc-forecast-panel');
+  const loading = document.getElementById('fc-forecast-loading');
+  const stationDataEl = document.getElementById('fc-station-data');
+
+  panel.classList.remove('hidden');
+  resetPanelContent();
+  loading.classList.remove('hidden');
+  document.getElementById('fc-click-hint').classList.add('hidden');
+
+  const loadingSpan = loading.querySelector('span');
+  loadingSpan.textContent = 'Loading station data\u2026';
+  const spinner = loading.querySelector('.fc-spin-ring');
+  spinner.style.display = '';
+
+  document.getElementById('fc-forecast-location').textContent =
+    `${station.name} \u00b7 ${isFinite(station.elevation) ? station.elevation + ' m \u00b7 ' : ''}Trentino`;
+
+  try {
+    const xml = await fetchXML(`https://dati.meteotrentino.it/service.asmx/getLastDataOfMeteoStation?codice=${encodeURIComponent(station.code)}`);
+
+    const getLatest = (listTag, itemTag) => {
+      const items = [...xml.querySelectorAll(`${listTag} > ${itemTag}`)];
+      for (let i = items.length - 1; i >= 0; i--) {
+        const v = parseFloat(items[i].querySelector('value')?.textContent);
+        if (isFinite(v)) {
+          return { value: v, date: items[i].querySelector('date')?.textContent?.trim() };
+        }
+      }
+      return null;
+    };
+
+    const temp     = getLatest('temperature_list', 'air_temperature');
+    const precip   = getLatest('precipitation_list', 'precipitation');
+    const windSpd  = getLatest('wind_speed_list', 'wind_speed');
+    const windDr   = getLatest('wind_direction_list', 'wind_direction');
+    const humidity = getLatest('humidity_list', 'humidity');
+    const snow     = getLatest('snow_height_list', 'snow_height');
+
+    const stationData = {
+      temp:      temp?.value,
+      precip:    precip?.value,
+      windSpeed: windSpd?.value,
+      windDir:   windDr?.value,
+      humidity:  humidity?.value,
+      snow:      snow?.value,
+      timestamp: temp?.date || windSpd?.date || precip?.date,
+    };
+
+    lastForecastData = { isTrentino: true, station, stationData };
+    renderTrentinoStationData(stationData, station);
+    loading.classList.add('hidden');
+    stationDataEl.classList.remove('hidden');
+  } catch (err) {
+    console.error('Trentino station data error:', err);
+    spinner.style.display = 'none';
+    loadingSpan.textContent = '\u26a0\ufe0f Error loading station data. The service may be temporarily unavailable.';
+  }
+}
+
+function renderTrentinoStationData(stationData, station) {
+  const stationDataEl = document.getElementById('fc-station-data');
+  const panel = document.getElementById('fc-forecast-panel');
+  const loading = document.getElementById('fc-forecast-loading');
+
+  panel.classList.remove('hidden');
+  resetPanelContent();
+  loading.classList.add('hidden');
+  document.getElementById('fc-click-hint').classList.add('hidden');
+
+  document.getElementById('fc-forecast-location').textContent =
+    `${station.name} \u00b7 ${isFinite(station.elevation) ? station.elevation + ' m \u00b7 ' : ''}Trentino`;
+
+  const useKt = windUnit === 'kt';
+  const toUnit = v => isFinite(v) ? (useKt ? v * MS_TO_KT : v) : v;
+  const unitLabel = useKt ? 'kt' : 'm/s';
+
+  const compassDir = (deg) => {
+    if (!isFinite(deg)) return '';
+    const dirs = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+    return dirs[Math.round(((deg % 360) + 360) % 360 / 22.5) % 16];
+  };
+
+  let timeFmt = '';
+  if (stationData.timestamp) {
+    try {
+      // Trentino timestamps: "2026-04-21T14:30:00+01" — normalise offset to "+01:00"
+      const normalized = stationData.timestamp.replace(/([+-]\d{2})$/, '$1:00');
+      const ts = new Date(normalized);
+      if (isFinite(ts.getTime())) {
+        timeFmt = displayTZ === 'UTC'
+          ? `${ts.toISOString().replace('T', ' ').substring(0, 16)} UTC`
+          : ts.toLocaleString();
+      }
+    } catch { /* ignore */ }
+  }
+
+  let html = timeFmt ? `<div class="fc-station-time">Measured at ${timeFmt}</div>` : '';
+  html += '<h3 class="fc-section-heading">Current observations</h3>';
+  html += '<div class="fc-station-grid">';
+
+  const { temp, precip, windSpeed, windDir, humidity, snow } = stationData;
+
+  if (isFinite(temp)) {
+    html += `<div class="fc-station-param">
+      <span class="fc-sp-icon">\u{1F321}\uFE0F</span>
+      <span class="fc-sp-val" style="background:${tempColor(temp)}">${temp.toFixed(1)} \u00B0C</span>
+      <span class="fc-sp-label">Temperature</span>
+    </div>`;
+  }
+  if (isFinite(humidity)) {
+    html += `<div class="fc-station-param">
+      <span class="fc-sp-icon">\u{1F4A7}</span>
+      <span class="fc-sp-val">${humidity.toFixed(0)} %</span>
+      <span class="fc-sp-label">Humidity</span>
+    </div>`;
+  }
+  if (isFinite(windSpeed)) {
+    const dir = isFinite(windDir) ? ` ${compassDir(windDir)}` : '';
+    html += `<div class="fc-station-param">
+      <span class="fc-sp-icon">\u{1F4A8}</span>
+      <span class="fc-sp-val">${toUnit(windSpeed).toFixed(1)} ${unitLabel}${dir}</span>
+      <span class="fc-sp-label">Wind</span>
+    </div>`;
+  }
+  if (isFinite(precip) && precip > 0) {
+    html += `<div class="fc-station-param">
+      <span class="fc-sp-icon">\u{1F327}\uFE0F</span>
+      <span class="fc-sp-val">${precip.toFixed(1)} mm</span>
+      <span class="fc-sp-label">Rain (15 min)</span>
+    </div>`;
+  }
+  if (isFinite(snow) && snow > 0) {
+    html += `<div class="fc-station-param">
+      <span class="fc-sp-icon">\u2744\uFE0F</span>
+      <span class="fc-sp-val">${snow.toFixed(0)} cm</span>
+      <span class="fc-sp-label">Snow depth</span>
+    </div>`;
+  }
+
+  html += '</div>';
+  html += `<div class="fc-station-credit">Data: <a href="https://www.meteotrentino.it/" target="_blank" rel="noopener">Meteotrentino / Provincia Autonoma di Trento</a> (CC BY 4.0)</div>`;
+
+  stationDataEl.innerHTML = html;
+  stationDataEl.classList.remove('hidden');
 }
 
 function onSiagStationClick(station, marker) {
@@ -1853,6 +2049,13 @@ function renderNearestStationBar() {
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+async function fetchXML(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${url}`);
+  const text = await res.text();
+  return new DOMParser().parseFromString(text, 'text/xml');
+}
 
 async function fetchJSON(url) {
   const res = await fetch(url);
