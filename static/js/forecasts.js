@@ -1417,20 +1417,89 @@ async function onStationClick(station, marker) {
 async function ensureTrentinoStations() {
   if (trentinoStations) return trentinoStations;
   const xml = await fetchXML('https://dati.meteotrentino.it/service.asmx/getListOfMeteoStations');
+  const ns = 'http://www.meteotrentino.it/';
   const stations = [];
-  for (const el of xml.querySelectorAll('pointOfMeasureInfo')) {
-    const enddate = el.querySelector('enddate')?.textContent?.trim();
+  for (const el of xml.getElementsByTagNameNS(ns, 'pointOfMeasureInfo')) {
+    const getText = tag => el.getElementsByTagNameNS(ns, tag)[0]?.textContent?.trim();
+    const enddate = getText('enddate');
     if (enddate && /\d/.test(enddate)) continue; // inactive station
-    const code = el.querySelector('code')?.textContent?.trim();
-    const name = el.querySelector('name')?.textContent?.trim();
-    const elevation = parseFloat(el.querySelector('elevation')?.textContent);
-    const lat = parseFloat(el.querySelector('latitude')?.textContent);
-    const lon = parseFloat(el.querySelector('longitude')?.textContent);
+    const code = getText('code');
+    const name = getText('name');
+    const elevation = parseFloat(getText('elevation'));
+    const lat = parseFloat(getText('latitude'));
+    const lon = parseFloat(getText('longitude'));
     if (!code || !name || !isFinite(lat) || !isFinite(lon)) continue;
-    stations.push({ code, name, elevation, lat, lon });
+    stations.push({ code, name, elevation: isFinite(elevation) ? elevation : null, lat, lon });
   }
   trentinoStations = stations;
   return stations;
+}
+
+/** Parse a Meteotrentino lastData XML document (namespace-aware). Returns a normalised object. */
+function parseTrentinoXML(xml) {
+  const ns = 'http://www.meteotrentino.it/';
+  const getEls = tag => [...xml.getElementsByTagNameNS(ns, tag)];
+
+  const getLatestItem = (itemTag, valueTag = 'value') => {
+    const items = getEls(itemTag);
+    for (let i = items.length - 1; i >= 0; i--) {
+      const v = parseFloat(items[i].getElementsByTagNameNS(ns, valueTag)[0]?.textContent);
+      if (isFinite(v)) {
+        const date = items[i].getElementsByTagNameNS(ns, 'date')[0]?.textContent?.trim();
+        return { value: v, date };
+      }
+    }
+    return null;
+  };
+
+  const tempResult     = getLatestItem('air_temperature');
+  const precipResult   = getLatestItem('precipitation');
+  const humidityResult = getLatestItem('relative_humidity');
+  const radResult      = getLatestItem('global_radiation');
+
+  // Wind uses wind_list > wind10m > speed_value / direction_value / windgust
+  const windItems = getEls('wind10m');
+  let windSpeed = null, windDir = null, windGust = null, windDate = null;
+  for (let i = windItems.length - 1; i >= 0; i--) {
+    const s = parseFloat(windItems[i].getElementsByTagNameNS(ns, 'speed_value')[0]?.textContent);
+    if (isFinite(s)) {
+      windSpeed = s;
+      windDir   = parseFloat(windItems[i].getElementsByTagNameNS(ns, 'direction_value')[0]?.textContent);
+      windGust  = parseFloat(windItems[i].getElementsByTagNameNS(ns, 'windgust')[0]?.textContent);
+      windDate  = windItems[i].getElementsByTagNameNS(ns, 'date')[0]?.textContent?.trim();
+      break;
+    }
+  }
+
+  // Snow depth
+  const snowItems = getEls('snow_depth');
+  let snow = null;
+  for (let i = snowItems.length - 1; i >= 0; i--) {
+    const v = parseFloat(snowItems[i].getElementsByTagNameNS(ns, 'value')[0]?.textContent);
+    if (isFinite(v)) { snow = v; break; }
+  }
+
+  return {
+    temp:      tempResult?.value ?? null,
+    precip:    precipResult?.value ?? null,
+    windSpeed,
+    windDir,
+    windGust,
+    humidity:  humidityResult?.value ?? null,
+    radiation: radResult?.value ?? null,
+    snow,
+    timestamp: tempResult?.date || windDate || precipResult?.date || null,
+  };
+}
+
+/** Parse a Meteotrentino timestamp string (e.g. "2026-04-21T14:30:00+01") to a Date. */
+function parseTrentinoTimestamp(str) {
+  if (!str) return null;
+  try {
+    const normalized = str.replace(/([+-]\d{2})$/, '$1:00');
+    const ts = new Date(normalized);
+    return isFinite(ts.getTime()) ? ts : null;
+  } catch { return null; }
 }
 
 async function onTrentinoStationClick(station, marker) {
@@ -1462,34 +1531,7 @@ async function onTrentinoStationClick(station, marker) {
 
   try {
     const xml = await fetchXML(`https://dati.meteotrentino.it/service.asmx/getLastDataOfMeteoStation?codice=${encodeURIComponent(station.code)}`);
-
-    const getLatest = (listTag, itemTag) => {
-      const items = [...xml.querySelectorAll(`${listTag} > ${itemTag}`)];
-      for (let i = items.length - 1; i >= 0; i--) {
-        const v = parseFloat(items[i].querySelector('value')?.textContent);
-        if (isFinite(v)) {
-          return { value: v, date: items[i].querySelector('date')?.textContent?.trim() };
-        }
-      }
-      return null;
-    };
-
-    const temp     = getLatest('temperature_list', 'air_temperature');
-    const precip   = getLatest('precipitation_list', 'precipitation');
-    const windSpd  = getLatest('wind_speed_list', 'wind_speed');
-    const windDr   = getLatest('wind_direction_list', 'wind_direction');
-    const humidity = getLatest('humidity_list', 'humidity');
-    const snow     = getLatest('snow_height_list', 'snow_height');
-
-    const stationData = {
-      temp:      temp?.value,
-      precip:    precip?.value,
-      windSpeed: windSpd?.value,
-      windDir:   windDr?.value,
-      humidity:  humidity?.value,
-      snow:      snow?.value,
-      timestamp: temp?.date || windSpd?.date || precip?.date,
-    };
+    const stationData = parseTrentinoXML(xml);
 
     lastForecastData = { isTrentino: true, station, stationData };
     renderTrentinoStationData(stationData, station);
@@ -1526,24 +1568,18 @@ function renderTrentinoStationData(stationData, station) {
   };
 
   let timeFmt = '';
-  if (stationData.timestamp) {
-    try {
-      // Trentino timestamps: "2026-04-21T14:30:00+01" — normalise offset to "+01:00"
-      const normalized = stationData.timestamp.replace(/([+-]\d{2})$/, '$1:00');
-      const ts = new Date(normalized);
-      if (isFinite(ts.getTime())) {
-        timeFmt = displayTZ === 'UTC'
-          ? `${ts.toISOString().replace('T', ' ').substring(0, 16)} UTC`
-          : ts.toLocaleString();
-      }
-    } catch { /* ignore */ }
+  const ts = parseTrentinoTimestamp(stationData.timestamp);
+  if (ts) {
+    timeFmt = displayTZ === 'UTC'
+      ? `${ts.toISOString().replace('T', ' ').substring(0, 16)} UTC`
+      : ts.toLocaleString();
   }
 
   let html = timeFmt ? `<div class="fc-station-time">Measured at ${timeFmt}</div>` : '';
   html += '<h3 class="fc-section-heading">Current observations</h3>';
   html += '<div class="fc-station-grid">';
 
-  const { temp, precip, windSpeed, windDir, humidity, snow } = stationData;
+  const { temp, precip, windSpeed, windDir, windGust, humidity, radiation, snow } = stationData;
 
   if (isFinite(temp)) {
     html += `<div class="fc-station-param">
@@ -1567,6 +1603,13 @@ function renderTrentinoStationData(stationData, station) {
       <span class="fc-sp-label">Wind</span>
     </div>`;
   }
+  if (isFinite(windGust) && windGust > 0) {
+    html += `<div class="fc-station-param">
+      <span class="fc-sp-icon">\u{1F32C}\uFE0F</span>
+      <span class="fc-sp-val" style="color:${windColor(windGust)}">${toUnit(windGust).toFixed(1)} ${unitLabel}</span>
+      <span class="fc-sp-label">Gusts</span>
+    </div>`;
+  }
   if (isFinite(precip) && precip > 0) {
     html += `<div class="fc-station-param">
       <span class="fc-sp-icon">\u{1F327}\uFE0F</span>
@@ -1579,6 +1622,13 @@ function renderTrentinoStationData(stationData, station) {
       <span class="fc-sp-icon">\u2744\uFE0F</span>
       <span class="fc-sp-val">${snow.toFixed(0)} cm</span>
       <span class="fc-sp-label">Snow depth</span>
+    </div>`;
+  }
+  if (isFinite(radiation) && radiation >= 0) {
+    html += `<div class="fc-station-param">
+      <span class="fc-sp-icon">\u2600\uFE0F</span>
+      <span class="fc-sp-val">${Math.round(radiation)} W/m²</span>
+      <span class="fc-sp-label">Solar radiation</span>
     </div>`;
   }
 
@@ -1975,16 +2025,6 @@ function haversineDistance(lat1, lon1, lat2, lon2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-function findNearestStation(lat, lng) {
-  if (!stationMeta) return null;
-  let nearest = null, minDist = Infinity;
-  for (const s of stationMeta) {
-    const d = haversineDistance(lat, lng, s.lat, s.lon);
-    if (d < minDist) { minDist = d; nearest = s; }
-  }
-  return nearest ? { station: nearest, distance: minDist } : null;
-}
-
 async function fetchAndShowNearestStation(lat, lng) {
   const nearestBar = document.getElementById('fc-nearest-station');
   nearestBar.classList.add('hidden');
@@ -1992,21 +2032,71 @@ async function fetchAndShowNearestStation(lat, lng) {
   if (nearestStationMarker) { nearestStationMarker.remove(); nearestStationMarker = null; }
 
   try {
-    await ensureStationMeta();
-    const result = findNearestStation(lat, lng);
-    if (!result) return;
+    // Load all station lists in parallel (cached after first call)
+    const [tawes, siag, trentino] = await Promise.all([
+      ensureStationMeta(),
+      ensureSiagStations().catch(() => []),
+      ensureTrentinoStations().catch(() => []),
+    ]);
 
-    const { station, distance } = result;
-    nearestStationMarker = L.circleMarker([station.lat, station.lon], {
-      radius: 5, color: '#ff9800', fillColor: '#ff9800', fillOpacity: 0.85, weight: 2,
-    }).addTo(map).bindTooltip(station.name, { direction: 'top', offset: [0, -6] });
+    // Find nearest across all three types
+    let nearest = null, minDist = Infinity, nearestType = null;
+    for (const s of tawes) {
+      const d = haversineDistance(lat, lng, s.lat, s.lon);
+      if (d < minDist) { minDist = d; nearest = s; nearestType = 'tawes'; }
+    }
+    for (const s of siag) {
+      if (!isFinite(s.lat) || !isFinite(s.lon)) continue;
+      const d = haversineDistance(lat, lng, s.lat, s.lon);
+      if (d < minDist) { minDist = d; nearest = s; nearestType = 'siag'; }
+    }
+    for (const s of trentino) {
+      const d = haversineDistance(lat, lng, s.lat, s.lon);
+      if (d < minDist) { minDist = d; nearest = s; nearestType = 'trentino'; }
+    }
+    if (!nearest) return;
 
-    const url = `${API_BASE}/station/current/${TAWES_RESOURCE}?parameters=${STATION_PARAMS}&station_ids=${station.id}&output_format=geojson`;
-    const json = await fetchJSON(url);
-    const timestamp = json.timestamps[0];
-    const params = json.features[0].properties.parameters;
+    const markerColor = nearestType === 'tawes' ? '#ff9800' : '#29b6f6';
+    nearestStationMarker = L.circleMarker([nearest.lat, nearest.lon], {
+      radius: 5, color: markerColor, fillColor: markerColor, fillOpacity: 0.85, weight: 2,
+    }).addTo(map).bindTooltip(nearest.name, { direction: 'top', offset: [0, -6] });
 
-    lastNearestStation = { station, distance, params, timestamp };
+    // Fetch data and normalise into { name, altitude, timestamp, temp, humidity, wind, pressure }
+    const altitude = nearestType === 'trentino' ? nearest.elevation : nearest.altitude;
+    let norm;
+
+    if (nearestType === 'tawes') {
+      const url = `${API_BASE}/station/current/${TAWES_RESOURCE}?parameters=${STATION_PARAMS}&station_ids=${nearest.id}&output_format=geojson`;
+      const json = await fetchJSON(url);
+      const ts = new Date(json.timestamps[0]);
+      const params = json.features[0].properties.parameters;
+      const gv = key => (params[key]?.data[0] ?? null);
+      norm = {
+        name: nearest.name, altitude, timestamp: ts,
+        temp: gv('TL'), humidity: gv('RF'), wind: gv('FF'), pressure: gv('P'),
+      };
+    } else if (nearestType === 'siag') {
+      const KMH_TO_MS = 1 / 3.6;
+      const ts = nearest.lastUpdated ? new Date(nearest.lastUpdated) : null;
+      const ff = parseFloat(nearest.ff);
+      norm = {
+        name: nearest.name, altitude, timestamp: ts,
+        temp:     isFinite(parseFloat(nearest.t))  ? parseFloat(nearest.t)  : null,
+        humidity: isFinite(parseFloat(nearest.rh)) ? parseFloat(nearest.rh) : null,
+        wind:     isFinite(ff) ? ff * KMH_TO_MS : null,
+        pressure: isFinite(parseFloat(nearest.p))  ? parseFloat(nearest.p)  : null,
+      };
+    } else { // trentino
+      const xml = await fetchXML(`https://dati.meteotrentino.it/service.asmx/getLastDataOfMeteoStation?codice=${encodeURIComponent(nearest.code)}`);
+      const d = parseTrentinoXML(xml);
+      const ts = parseTrentinoTimestamp(d.timestamp);
+      norm = {
+        name: nearest.name, altitude, timestamp: ts,
+        temp: d.temp, humidity: d.humidity, wind: d.windSpeed, pressure: null,
+      };
+    }
+
+    lastNearestStation = { ...norm, distance: minDist };
     renderNearestStationBar();
   } catch (err) {
     console.error('Nearest station error:', err);
@@ -2016,33 +2106,30 @@ async function fetchAndShowNearestStation(lat, lng) {
 function renderNearestStationBar() {
   const nearestBar = document.getElementById('fc-nearest-station');
   if (!lastNearestStation) { nearestBar.classList.add('hidden'); return; }
-  const { station, distance, params, timestamp } = lastNearestStation;
+  const { name, altitude, timestamp, distance, temp, humidity, wind, pressure } = lastNearestStation;
   const useKt = windUnit === 'kt';
   const toUnit = v => isFinite(v) ? (useKt ? v * MS_TO_KT : v) : v;
   const unitLabel = useKt ? 'kt' : 'm/s';
 
-  const ts = new Date(timestamp);
-  const timeFmt = displayTZ === 'UTC'
-    ? `${ts.getUTCHours().toString().padStart(2, '0')}:${ts.getUTCMinutes().toString().padStart(2, '0')} UTC`
-    : `${ts.getHours().toString().padStart(2, '0')}:${ts.getMinutes().toString().padStart(2, '0')}`;
-
-  const getValue = (key) => {
-    if (!params[key] || params[key].data[0] === null) return null;
-    return params[key].data[0];
-  };
-  const temp = getValue('TL');
-  const wind = getValue('FF');
-  const humidity = getValue('RF');
-  const pressure = getValue('P');
+  let timeFmt = '';
+  if (timestamp) {
+    const ts = timestamp instanceof Date ? timestamp : new Date(timestamp);
+    if (isFinite(ts.getTime())) {
+      timeFmt = displayTZ === 'UTC'
+        ? `${ts.getUTCHours().toString().padStart(2, '0')}:${ts.getUTCMinutes().toString().padStart(2, '0')} UTC`
+        : `${ts.getHours().toString().padStart(2, '0')}:${ts.getMinutes().toString().padStart(2, '0')}`;
+    }
+  }
 
   let parts = [];
-  if (temp !== null) parts.push(`${temp.toFixed(1)}\u00B0C`);
-  if (humidity !== null) parts.push(`${humidity.toFixed(0)}% RH`);
-  if (wind !== null) parts.push(`${toUnit(wind).toFixed(1)} ${unitLabel}`);
-  if (pressure !== null) parts.push(`${pressure.toFixed(0)} hPa`);
+  if (temp !== null && isFinite(temp))         parts.push(`${temp.toFixed(1)}\u00B0C`);
+  if (humidity !== null && isFinite(humidity)) parts.push(`${humidity.toFixed(0)}% RH`);
+  if (wind !== null && isFinite(wind))         parts.push(`${toUnit(wind).toFixed(1)} ${unitLabel}`);
+  if (pressure !== null && isFinite(pressure)) parts.push(`${pressure.toFixed(0)} hPa`);
 
+  const altStr = altitude != null && isFinite(altitude) ? `, ${altitude}\u00A0m a.s.l.` : '';
   nearestBar.innerHTML = `
-    <span class="fc-nearest-label">Closest weather station: ${station.name} (${distance.toFixed(1)}\u00A0km away, ${station.altitude}\u00A0m a.s.l.) \u2014 ${timeFmt}</span>
+    <span class="fc-nearest-label">Closest weather station: ${name} (${distance.toFixed(1)}\u00A0km away${altStr}) \u2014 ${timeFmt}</span>
     <span class="fc-nearest-values">${parts.join(' \u00B7 ')}</span>
   `;
   nearestBar.classList.remove('hidden');
