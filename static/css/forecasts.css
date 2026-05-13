@@ -563,6 +563,13 @@ footer        { display: none !important; }
   font-size: 0.72rem !important;
 }
 
+/* Snow row */
+
+.fc-snow-cell {
+  font-size: 0.72rem !important;
+  font-weight: 600;
+}
+
 /* Wind row */
 
 .fc-wind-cell {

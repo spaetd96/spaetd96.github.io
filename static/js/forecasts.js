@@ -9,12 +9,13 @@ const OPENMETEO_BASE = 'https://api.open-meteo.com/v1/forecast';
 const MODELS = {
   ifs: {
     label:    'IFS HRES',
-    desc:     'ECMWF IFS HRES · hourly up to 5 days · 9 km grid · updated every 6 h · global coverage',
+    desc:     'ECMWF IFS HRES · hourly up to 10 days · 9 km grid · updated every 6 h · global coverage',
     dataUrl:  'https://open-meteo.com/en/docs/ecmwf-api',
     hasCloudCover: true,
     isOpenMeteo:   true,
-    openMeteoModel: 'ecmwf_ifs',
-    openMeteoDays:  5,
+    openMeteoBase:  'https://api.open-meteo.com/v1/ecmwf',
+    openMeteoModel: null,  // dedicated endpoint; no models= param needed
+    openMeteoDays:  10,
     creditHtml: '<a href="https://www.ecmwf.int/en/forecasts/datasets/open-data" target="_blank" rel="noopener">ECMWF IFS HRES</a> via <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a>',
   },
   icon_ch: {
@@ -34,8 +35,8 @@ const MODELS = {
   arome: {
     resource: 'nwp-v1-1h-2500m',
     label:    'AROME',
-    desc:     'Short-range weather forecast · hourly steps up to 60 h · 2.5 km grid · temperature, rain, wind, clouds',
-    params:   't2m,rr_acc,u10m,v10m,tcc,ugust,vgust',
+    desc:     'Short-range weather forecast · hourly steps up to 60 h · 2.5 km grid · temperature, rain, snow, wind, clouds',
+    params:   't2m,rr_acc,snow_acc,u10m,v10m,tcc,ugust,vgust',
     dataUrl:  'https://data.hub.geosphere.at/dataset/nwp-v1-1h-2500m',
     doi:      null,
     doiUrl:   null,
@@ -336,9 +337,11 @@ async function fetchAndShowForecast(lat, lng) {
 
     let url;
     if (m.isOpenMeteo) {
-      url = `${OPENMETEO_BASE}?latitude=${lat.toFixed(4)}&longitude=${lng.toFixed(4)}` +
-            `&hourly=temperature_2m,rain,wind_speed_10m,wind_direction_10m,wind_gusts_10m,cloud_cover` +
-            `&models=${m.openMeteoModel}&forecast_days=${m.openMeteoDays}&wind_speed_unit=ms&timezone=UTC`;
+      const omBase = m.openMeteoBase || OPENMETEO_BASE;
+      const modelsParam = m.openMeteoModel ? `&models=${m.openMeteoModel}` : '';
+      url = `${omBase}?latitude=${lat.toFixed(4)}&longitude=${lng.toFixed(4)}` +
+            `&hourly=temperature_2m,precipitation,snowfall,wind_speed_10m,wind_direction_10m,wind_gusts_10m,cloud_cover` +
+            `${modelsParam}&forecast_days=${m.openMeteoDays}&wind_speed_unit=ms&timezone=UTC`;
     } else if (m.isEnsemble) {
       url = `${API_BASE}/timeseries/forecast/${m.resource}` +
             `?lat_lon=${lat.toFixed(4)},${lng.toFixed(4)}&parameters=${m.params}`;
@@ -419,7 +422,7 @@ async function fetchAndShowEnsemble(lat, lng) {
 
 async function fetchMergedIconCH(lat, lng) {
   const m = MODELS.icon_ch;
-  const omParams = 'temperature_2m,rain,wind_speed_10m,wind_direction_10m,wind_gusts_10m,cloud_cover';
+  const omParams = 'temperature_2m,precipitation,snowfall,wind_speed_10m,wind_direction_10m,wind_gusts_10m,cloud_cover';
 
   const urls = m.mergeModels.map(sub =>
     `${OPENMETEO_BASE}?latitude=${lat.toFixed(4)}&longitude=${lng.toFixed(4)}` +
@@ -451,6 +454,7 @@ async function fetchMergedIconCH(lat, lng) {
     times:      [...d1.times.slice(0, ch1Count),      ...d2.times.slice(mergeStart)],
     temp:       [...d1.temp.slice(0, ch1Count),       ...d2.temp.slice(mergeStart)],
     rain:       [...d1.rain.slice(0, ch1Count),       ...d2.rain.slice(mergeStart)],
+    snowfall:   [...(d1.snowfall || []).slice(0, ch1Count), ...(d2.snowfall || []).slice(mergeStart)],
     windSpeed:  [...d1.windSpeed.slice(0, ch1Count),  ...d2.windSpeed.slice(mergeStart)],
     windDir:    [...d1.windDir.slice(0, ch1Count),    ...d2.windDir.slice(mergeStart)],
     gustSpeed:  [...(d1.gustSpeed || []).slice(0, ch1Count), ...(d2.gustSpeed || []).slice(mergeStart)],
@@ -464,11 +468,11 @@ async function fetchMergedIconCH(lat, lng) {
 // ── Compare mode: fetch IFS, ICON-CH, AROME ─────────────────────────────────
 
 async function fetchCompareData(lat, lng) {
-  const omParams = 'temperature_2m,rain,wind_speed_10m,wind_direction_10m,wind_gusts_10m,cloud_cover';
+  const omParams = 'temperature_2m,precipitation,snowfall,wind_speed_10m,wind_direction_10m,wind_gusts_10m,cloud_cover';
 
-  // IFS
-  const ifsUrl = `${OPENMETEO_BASE}?latitude=${lat.toFixed(4)}&longitude=${lng.toFixed(4)}` +
-    `&hourly=${omParams}&models=ecmwf_ifs&forecast_days=5&wind_speed_unit=ms&timezone=UTC`;
+  // IFS — use the dedicated /v1/ecmwf endpoint for correct IFS HRES 9 km data
+  const ifsUrl = `https://api.open-meteo.com/v1/ecmwf?latitude=${lat.toFixed(4)}&longitude=${lng.toFixed(4)}` +
+    `&hourly=${omParams}&forecast_days=5&wind_speed_unit=ms&timezone=UTC`;
 
   // AROME (GeoSphere direct)
   const aromeUrl = `${API_BASE}/timeseries/forecast/nwp-v1-1h-2500m` +
@@ -558,6 +562,7 @@ function unifyCompareTimes(results) {
     d.times       = unified;
     d.temp        = remap(d.temp);
     d.rain        = remap(d.rain);
+    d.snowfall    = remap(d.snowfall);
     d.windSpeed   = remap(d.windSpeed);
     d.windDir     = remap(d.windDir);
     d.gustSpeed   = remap(d.gustSpeed);
@@ -637,14 +642,18 @@ function processOpenMeteoTimeseries(json) {
   // Extract only valid timesteps for each data array
   const times      = validIndices.map(i => allTimes[i]);
   const temp       = validIndices.map(i => h.temperature_2m[i]);
-  const rain       = validIndices.map(i => h.rain[i] === null ? 0 : Math.max(0, h.rain[i]));
+  const rain       = validIndices.map(i => h.precipitation[i] === null ? 0 : Math.max(0, h.precipitation[i]));
+  // Open-Meteo snowfall is in cm of snow depth; 1 cm ≈ 1 mm water equivalent
+  const snowfall   = h.snowfall
+    ? validIndices.map(i => h.snowfall[i] === null ? 0 : Math.max(0, h.snowfall[i]))
+    : null;
   const windSpeed  = validIndices.map(i => h.wind_speed_10m[i]);
   const windDir    = validIndices.map(i => h.wind_direction_10m[i]);
   const gustSpeed  = validIndices.map(i => h.wind_gusts_10m[i]);
   // Cloud cover is 0–100 in Open-Meteo; normalise to 0–1 for weatherIcon()
   const cloudCover = validIndices.map(i => h.cloud_cover[i] === null ? null : h.cloud_cover[i] / 100);
   
-  return { times, temp, rain, windSpeed, windDir, gustSpeed, cloudCover };
+  return { times, temp, rain, snowfall, windSpeed, windDir, gustSpeed, cloudCover };
 }
 
 // ── Process API response ─────────────────────────────────────────────────────
@@ -686,7 +695,14 @@ function processTimeseries(json) {
 
   const cloudCover = m.hasCloudCover && p.tcc ? p.tcc.data : null;
 
-  return { times: timestamps, temp, rain, windSpeed, windDir, gustSpeed, cloudCover };
+  // AROME snow_acc is accumulated kg/m² (= mm WE); difference to get per-hour mm
+  let snowfall = null;
+  if (p.snow_acc) {
+    const acc = p.snow_acc.data;
+    snowfall = acc.map((v, i) => i === 0 ? Math.max(0, v) : Math.max(0, v - acc[i - 1]));
+  }
+
+  return { times: timestamps, temp, rain, snowfall, windSpeed, windDir, gustSpeed, cloudCover };
 }
 
 // ── Render Windy-style forecast table ────────────────────────────────────────
@@ -697,7 +713,8 @@ function renderForecastTable(data) {
 }
 
 function renderForecastTableInto(table, data) {
-  const { times, temp, rain, windSpeed, windDir, gustSpeed, cloudCover, transitionIndex, transitionLabel } = data;
+  const { times, temp, rain, snowfall, windSpeed, windDir, gustSpeed, cloudCover, transitionIndex, transitionLabel } = data;
+  const hasSnow = snowfall && snowfall.some(v => v !== null && v > 0.05);
   const useKt = windUnit === 'kt';
   const unitLabel = useKt ? 'kt' : 'm/s';
   const toUnit = v => isFinite(v) ? (useKt ? v * MS_TO_KT : v) : v;
@@ -803,7 +820,7 @@ function renderForecastTableInto(table, data) {
     for (let i = 0; i < n; i++) {
       const td = document.createElement('td');
       if (cloudCover[i] !== null) {
-        td.textContent = weatherIcon(cloudCover[i], rain[i], getH(times[i]));
+        td.textContent = weatherIcon(cloudCover[i], rain[i], getH(times[i]), snowfall ? snowfall[i] : 0);
       }
       applyNoData(td, cloudCover[i]);
       applyTransitionBorder(td, i);
@@ -856,7 +873,32 @@ function renderForecastTableInto(table, data) {
   }
   table.appendChild(rainRow);
 
-  // ── Row 6: Wind ──
+  // ── Row 6: Snow (only if any snowfall) ──
+  if (hasSnow) {
+    const snowRow = document.createElement('tr');
+    snowRow.className = 'fc-row-snow';
+    const snowLabel = document.createElement('td');
+    snowLabel.className = 'fc-label';
+    snowLabel.innerHTML = 'Snow&nbsp;mm';
+    snowRow.appendChild(snowLabel);
+    for (let i = 0; i < n; i++) {
+      const td = document.createElement('td');
+      td.className = 'fc-snow-cell';
+      const val = snowfall[i];
+      if (val !== null && isFinite(val) && val > 0.05) {
+        td.textContent = val < 10 ? val.toFixed(1) : Math.round(val);
+        const intensity = Math.min(1, val / 10);
+        td.style.backgroundColor = `rgba(160, 210, 255, ${(0.2 + intensity * 0.6).toFixed(2)})`;
+        td.style.color = '#111';
+      }
+      applyNoData(td, val);
+      applyTransitionBorder(td, i);
+      snowRow.appendChild(td);
+    }
+    table.appendChild(snowRow);
+  }
+
+  // ── Row 7: Wind ──
   const windRow = document.createElement('tr');
   windRow.className = 'fc-row-wind';
   const windLabel = document.createElement('td');
@@ -1120,8 +1162,12 @@ function makeEnsembleChart({ title, yUnit, times, p10, p50, p90, color, bandFill
 
 // ── Weather icon helper ──────────────────────────────────────────────────────
 
-function weatherIcon(tcc, rain, hour) {
+function weatherIcon(tcc, rain, hour, snow = 0) {
   const isNight = hour < 6 || hour >= 21;
+  if (isFinite(snow) && snow > 0.1) {
+    if (tcc < 0.5) return '🌨️';
+    return '❄️';
+  }
   if (isFinite(rain) && rain > 0.1) {
     if (rain > 5) return '⛈️';
     if (tcc < 0.5) return '🌦️';
