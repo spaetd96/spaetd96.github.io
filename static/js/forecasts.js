@@ -102,6 +102,18 @@ const TEMP_STOPS = [
   [ 40, [200,  30,  30]],
 ];
 
+// ── Geo utilities ──────────────────────────────────────────────────────────
+
+/** Haversine distance in km between two lat/lon pairs. */
+function haversineKm(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2
+    + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 // Wind speed colour stops (m/s → [r,g,b])
 const WIND_STOPS = [
   [ 0, [200, 200, 200]],
@@ -281,6 +293,39 @@ function onMapClick(e) {
   fetchAndShowForecast(lat, lng);
 }
 
+// ── Forecast location label ──────────────────────────────────────────────────
+
+/**
+ * Update the `fc-forecast-location` element.
+ * Shows the ACTUAL grid cell coordinates when they differ from the clicked
+ * point by more than 2 km (so the user understands why data may not match
+ * other sources like Windy that interpolate at the exact click).
+ *
+ * @param {number}  lat    Clicked latitude
+ * @param {number}  lng    Clicked longitude
+ * @param {object|null} data  Processed forecast data (may have gridLat/gridLon)
+ * @param {string}  label Model label string
+ */
+function setForecastLocationEl(lat, lng, data, label) {
+  const el = document.getElementById('fc-forecast-location');
+  if (data && data.gridLat !== undefined && data.gridLon !== undefined) {
+    const dist = haversineKm(lat, lng, data.gridLat, data.gridLon);
+    if (dist > 2) {
+      // Grid cell is noticeably far from the clicked point — show actual coords
+      el.textContent = `${data.gridLat.toFixed(3)}°N, ${data.gridLon.toFixed(3)}°E · ${label}`;
+      el.title = `You clicked ${lat.toFixed(3)}°N, ${lng.toFixed(3)}°E. `
+        + `The nearest model grid cell is ${dist.toFixed(0)} km away. `
+        + `Differences vs. other sources that interpolate may be due to this offset.`;
+    } else {
+      el.textContent = `${lat.toFixed(3)}°N, ${lng.toFixed(3)}°E · ${label}`;
+      el.title = '';
+    }
+  } else {
+    el.textContent = `${lat.toFixed(3)}°N, ${lng.toFixed(3)}°E · ${label}`;
+    el.title = '';
+  }
+}
+
 // ── Fetch + render forecast ──────────────────────────────────────────────────
 
 async function fetchAndShowForecast(lat, lng) {
@@ -310,8 +355,8 @@ async function fetchAndShowForecast(lat, lng) {
   const spinner = loading.querySelector('.fc-spin-ring');
   spinner.style.display = '';
 
-  document.getElementById('fc-forecast-location').textContent =
-    `${lat.toFixed(3)}°N, ${lng.toFixed(3)}°E · ${m.label}`;
+  // Initial location text (clicked coordinates); updated later once we know the actual grid cell.
+  setForecastLocationEl(lat, lng, null, m.label);
 
   try {
     if (m.isCompare) {
@@ -329,6 +374,7 @@ async function fetchAndShowForecast(lat, lng) {
       const data = await fetchMergedIconCH(lat, lng);
       lastForecastData = data;
       lastForecastData.isEnsemble = false;
+      setForecastLocationEl(lat, lng, lastForecastData, m.label);
       scroll.classList.remove('hidden');
       renderForecastTable(lastForecastData);
       loading.classList.add('hidden');
@@ -354,6 +400,7 @@ async function fetchAndShowForecast(lat, lng) {
     if (m.isOpenMeteo) {
       lastForecastData = processOpenMeteoTimeseries(json);
       lastForecastData.isEnsemble = false;
+      setForecastLocationEl(lat, lng, lastForecastData, m.label);
       scroll.classList.remove('hidden');
       renderForecastTable(lastForecastData);
     } else if (m.isEnsemble) {
@@ -363,6 +410,7 @@ async function fetchAndShowForecast(lat, lng) {
     } else {
       lastForecastData = processTimeseries(json);
       lastForecastData.isEnsemble = false;
+      setForecastLocationEl(lat, lng, lastForecastData, m.label);
       scroll.classList.remove('hidden');
       renderForecastTable(lastForecastData);
     }
@@ -459,6 +507,9 @@ async function fetchMergedIconCH(lat, lng) {
     windDir:    [...d1.windDir.slice(0, ch1Count),    ...d2.windDir.slice(mergeStart)],
     gustSpeed:  [...(d1.gustSpeed || []).slice(0, ch1Count), ...(d2.gustSpeed || []).slice(mergeStart)],
     cloudCover: [...(d1.cloudCover || []).slice(0, ch1Count), ...(d2.cloudCover || []).slice(mergeStart)],
+    // Use CH1 grid coordinates (highest resolution)
+    gridLat: d1.gridLat,
+    gridLon: d1.gridLon,
     transitionIndex,
     transitionLabel: 'ICON-CH2',
   };
@@ -474,9 +525,9 @@ async function fetchCompareData(lat, lng) {
   const ifsUrl = `https://api.open-meteo.com/v1/ecmwf?latitude=${lat.toFixed(4)}&longitude=${lng.toFixed(4)}` +
     `&hourly=${omParams}&forecast_days=5&wind_speed_unit=ms&timezone=UTC`;
 
-  // AROME (GeoSphere direct)
+  // AROME (GeoSphere direct) — include snow_acc so the snow row appears in compare mode too
   const aromeUrl = `${API_BASE}/timeseries/forecast/nwp-v1-1h-2500m` +
-    `?lat_lon=${lat.toFixed(4)},${lng.toFixed(4)}&parameters=t2m,rr_acc,u10m,v10m,tcc,ugust,vgust`;
+    `?lat_lon=${lat.toFixed(4)},${lng.toFixed(4)}&parameters=t2m,rr_acc,snow_acc,u10m,v10m,tcc,ugust,vgust`;
 
   const results = [];
 
@@ -491,7 +542,7 @@ async function fetchCompareData(lat, lng) {
   if (ifsJson.status === 'fulfilled') {
     const data = processOpenMeteoTimeseries(ifsJson.value);
     data.isEnsemble = false;
-    results.push({ label: 'IFS HRES', data, hasCloudCover: true });
+    results.push({ label: 'IFS HRES', data, hasCloudCover: true, gridLat: data.gridLat, gridLon: data.gridLon });
   } else {
     results.push({ label: 'IFS HRES', error: ifsJson.reason?.message || 'Failed to load' });
   }
@@ -500,7 +551,7 @@ async function fetchCompareData(lat, lng) {
   if (iconChData.status === 'fulfilled') {
     const data = iconChData.value;
     data.isEnsemble = false;
-    results.push({ label: 'ICON-CH', data, hasCloudCover: true });
+    results.push({ label: 'ICON-CH', data, hasCloudCover: true, gridLat: data.gridLat, gridLon: data.gridLon });
   } else {
     results.push({ label: 'ICON-CH', error: iconChData.reason?.message || 'Failed to load' });
   }
@@ -513,7 +564,7 @@ async function fetchCompareData(lat, lng) {
     try {
       const data = processTimeseries(aromeJson.value);
       data.isEnsemble = false;
-      results.push({ label: 'AROME', data, hasCloudCover: true });
+      results.push({ label: 'AROME', data, hasCloudCover: true, gridLat: data.gridLat, gridLon: data.gridLon });
     } finally {
       currentModel = savedModel;
     }
@@ -587,7 +638,11 @@ function renderCompareView(models) {
 
     const heading = document.createElement('h3');
     heading.className = 'fc-section-heading';
-    heading.textContent = entry.label;
+    if (entry.gridLat !== undefined && entry.gridLon !== undefined) {
+      heading.textContent = `${entry.label} — grid: ${entry.gridLat.toFixed(3)}°N, ${entry.gridLon.toFixed(3)}°E`;
+    } else {
+      heading.textContent = entry.label;
+    }
     section.appendChild(heading);
 
     if (entry.error) {
@@ -652,8 +707,11 @@ function processOpenMeteoTimeseries(json) {
   const gustSpeed  = validIndices.map(i => h.wind_gusts_10m[i]);
   // Cloud cover is 0–100 in Open-Meteo; normalise to 0–1 for weatherIcon()
   const cloudCover = validIndices.map(i => h.cloud_cover[i] === null ? null : h.cloud_cover[i] / 100);
+  // Actual grid cell returned by the API (may differ from the requested coordinates)
+  const gridLat = json.latitude;
+  const gridLon = json.longitude;
   
-  return { times, temp, rain, snowfall, windSpeed, windDir, gustSpeed, cloudCover };
+  return { times, temp, rain, snowfall, windSpeed, windDir, gustSpeed, cloudCover, gridLat, gridLon };
 }
 
 // ── Process API response ─────────────────────────────────────────────────────
@@ -702,7 +760,14 @@ function processTimeseries(json) {
     snowfall = acc.map((v, i) => i === 0 ? Math.max(0, v) : Math.max(0, v - acc[i - 1]));
   }
 
-  return { times: timestamps, temp, rain, snowfall, windSpeed, windDir, gustSpeed, cloudCover };
+  // Actual grid cell coordinates from the GeoJSON feature geometry
+  const coords = json.features?.[0]?.geometry?.coordinates;
+  const gridLat = coords ? coords[1] : undefined;
+  const gridLon = coords ? coords[0] : undefined;
+  // Model run reference time
+  const refTime = json.reference_time ? new Date(json.reference_time) : null;
+
+  return { times: timestamps, temp, rain, snowfall, windSpeed, windDir, gustSpeed, cloudCover, gridLat, gridLon, refTime };
 }
 
 // ── Render Windy-style forecast table ────────────────────────────────────────
