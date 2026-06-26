@@ -2351,8 +2351,9 @@ function makeHistoryChart({ title, times, values, color, yMin0 = false, yMax = n
     const hh = (displayTZ === 'UTC' ? t.getUTCHours()   : t.getHours()).toString().padStart(2, '0');
     const mm = (displayTZ === 'UTC' ? t.getUTCMinutes() : t.getMinutes()).toString().padStart(2, '0');
     const dayFmt = t.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short', timeZone: tzOpt2 });
+    const unit   = title.match(/\(([^)]+)\)/)?.[1] ?? '';
     const valStr = Math.abs(v) < 10 ? v.toFixed(1) : Math.round(v).toString();
-    const label  = `${valStr}  ${dayFmt} ${hh}:${mm}`;
+    const label  = `${valStr} ${unit}, ${dayFmt}, ${hh}:${mm}`;
     hairTxt.textContent = label;
     const approxW = label.length * 5.4 + 10;
     const approxH = 14;
