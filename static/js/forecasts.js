@@ -75,7 +75,7 @@ const MODELS = {
   },
   stations: {
     label:    'Stations',
-    desc:     'Current weather from ~260 Austrian TAWES stations + South Tyrol (SIAG) stations + Trentino (Meteotrentino) stations · 24 h history for Austrian stations',
+    desc:     'Current weather from ~260 Austrian TAWES stations + South Tyrol (SIAG) stations + Trentino (Meteotrentino) stations + MeteoNetwork volunteer stations · 24 h history for Austrian stations',
     dataUrl:  'https://data.hub.geosphere.at/dataset/tawes-v1-10min',
     dataUrl2: 'https://data.hub.geosphere.at/dataset/klima-v2-1h',
     doi:      null,
@@ -90,6 +90,13 @@ const KLIMA_V2_RESOURCE = 'klima-v2-1h';
 const HIST_PARAMS = 'tl,rf,p,ff';
 
 const MS_TO_KT = 1.94384;
+
+// MeteoNetwork API — get a free token at https://my.meteonetwork.it/
+// POST https://api.meteonetwork.it/v3/login  (email + password) to obtain the token.
+// A BULK-type token is required to discover stations by geographic area.
+// Leave empty to disable MeteoNetwork stations.
+const METEONETWORK_TOKEN = '';
+const METEONETWORK_BASE  = 'https://api.meteonetwork.it/v3';
 
 // Temperature colour stops (value → [r,g,b])
 const TEMP_STOPS = [
@@ -130,6 +137,7 @@ let lastHistData = null;
 let stationMeta = null;
 let siagStations = null;
 let trentinoStations = null;
+let meteonetworkStations = null;
 let stationMarkerLayer = null;
 let nearestStationMarker = null;
 let selectedStationMarker = null;
@@ -248,6 +256,8 @@ function reRenderCurrent() {
     renderSiagStationData(lastForecastData.station);
   } else if (lastForecastData.isTrentino) {
     renderTrentinoStationData(lastForecastData.stationData, lastForecastData.station);
+  } else if (lastForecastData.isMeteonetwork) {
+    renderMeteonetworkStationData(lastForecastData.stationData, lastForecastData.station);
   } else {
     renderForecastTable(lastForecastData);
     if (lastNearestStation) renderNearestStationBar();
@@ -265,7 +275,8 @@ function updateInfoBox() {
     credit = `Data: <a href="${m.dataUrl}" target="_blank" rel="noopener">GeoSphere TAWES</a> (current) · ` +
              `<a href="${m.dataUrl2}" target="_blank" rel="noopener">klima-v2-1h</a> (24 h history) · ` +
              `<a href="https://weather.province.bz.it/" target="_blank" rel="noopener">SIAG South Tyrol</a> (CC0) · ` +
-             `<a href="https://www.meteotrentino.it/" target="_blank" rel="noopener">Meteotrentino</a> (CC BY 4.0)`;
+             `<a href="https://www.meteotrentino.it/" target="_blank" rel="noopener">Meteotrentino</a> (CC BY 4.0)` +
+             (METEONETWORK_TOKEN ? ` · <a href="https://www.meteonetwork.it/" target="_blank" rel="noopener">MeteoNetwork</a> (CC BY 4.0)` : '');
   } else if (m.isOpenMeteo) {
     credit = `Data: ${m.creditHtml} (CC BY 4.0)`;
   } else {
@@ -1430,14 +1441,15 @@ async function ensureSiagStations() {
 async function showStationMarkers() {
   stationMarkerLayer.clearLayers();
   try {
-    const [stations, siag, trentino] = await Promise.all([
+    const [stations, siag, trentino, meteonetwork] = await Promise.all([
       ensureStationMeta(),
       ensureSiagStations().catch(() => []),
       ensureTrentinoStations().catch(() => []),
+      ensureMeteonetworkStations().catch(() => []),
     ]);
     for (const s of stations) {
       const marker = L.circleMarker([s.lat, s.lon], {
-        radius: 5,
+        radius: 8,
         color: '#ff9800',
         fillColor: '#ff9800',
         fillOpacity: 0.7,
@@ -1450,7 +1462,7 @@ async function showStationMarkers() {
     for (const s of siag) {
       if (!isFinite(s.lat) || !isFinite(s.lon)) continue;
       const marker = L.circleMarker([s.lat, s.lon], {
-        radius: 5,
+        radius: 8,
         color: '#29b6f6',
         fillColor: '#29b6f6',
         fillOpacity: 0.7,
@@ -1463,7 +1475,7 @@ async function showStationMarkers() {
     for (const s of trentino) {
       if (!isFinite(s.lat) || !isFinite(s.lon)) continue;
       const marker = L.circleMarker([s.lat, s.lon], {
-        radius: 5,
+        radius: 8,
         color: '#29b6f6',
         fillColor: '#29b6f6',
         fillOpacity: 0.7,
@@ -1471,6 +1483,19 @@ async function showStationMarkers() {
       });
       marker.bindTooltip(`${s.name} (Trentino)`, { direction: 'top', offset: [0, -6] });
       marker.on('click', () => onTrentinoStationClick(s, marker));
+      stationMarkerLayer.addLayer(marker);
+    }
+    for (const s of meteonetwork) {
+      if (!isFinite(s.lat) || !isFinite(s.lon)) continue;
+      const marker = L.circleMarker([s.lat, s.lon], {
+        radius: 8,
+        color: '#66bb6a',
+        fillColor: '#66bb6a',
+        fillOpacity: 0.7,
+        weight: 1.5,
+      });
+      marker.bindTooltip(`${s.name} (MeteoNetwork)`, { direction: 'top', offset: [0, -6] });
+      marker.on('click', () => onMeteonetworkStationClick(s, marker));
       stationMarkerLayer.addLayer(marker);
     }
   } catch (err) {
@@ -1546,7 +1571,180 @@ async function ensureTrentinoStations() {
   return stations;
 }
 
-/** Parse a Meteotrentino lastData XML document (namespace-aware). Returns a normalised object. */
+// ── MeteoNetwork stations (Trentino / Northern Italy) ─────────────────────────
+// Requires a free account at https://my.meteonetwork.it/ and a BULK token.
+// Set METEONETWORK_TOKEN above to enable.
+
+async function ensureMeteonetworkStations() {
+  if (!METEONETWORK_TOKEN) return [];
+  if (meteonetworkStations) return meteonetworkStations;
+  // Geographic search centred on Trentino (46.07°N, 11.12°E, 80 km radius)
+  const url = `${METEONETWORK_BASE}/stations?lat=46.07&lon=11.12&range=80&country=IT`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${METEONETWORK_TOKEN}` } });
+  if (!res.ok) {
+    if (res.status === 405) console.warn('MeteoNetwork: a BULK token is required to list stations by area.');
+    throw new Error(`MeteoNetwork stations HTTP ${res.status}`);
+  }
+  const json = await res.json();
+  meteonetworkStations = json
+    .filter(s => s.is_valid === 'Y' && !s.removal_date)
+    .map(s => ({
+      code:     s.code,
+      name:     s.name || `${s.place_name} – ${s.area}`,
+      lat:      parseFloat(s.latitude),
+      lon:      parseFloat(s.longitude),
+      altitude: s.altitude,
+    }))
+    .filter(s => isFinite(s.lat) && isFinite(s.lon));
+  return meteonetworkStations;
+}
+
+async function onMeteonetworkStationClick(station, marker) {
+  if (selectedStationMarker) {
+    const origColor = selectedStationMarker._origColor || '#ff9800';
+    selectedStationMarker.setStyle({ color: origColor, fillColor: origColor });
+  }
+  marker._origColor = '#66bb6a';
+  marker.setStyle({ color: '#26a69a', fillColor: '#26a69a' });
+  selectedStationMarker = marker;
+  lastHistData = null;
+
+  const panel      = document.getElementById('fc-forecast-panel');
+  const loading    = document.getElementById('fc-forecast-loading');
+  const stationDataEl = document.getElementById('fc-station-data');
+  panel.classList.remove('hidden');
+  resetPanelContent();
+  loading.classList.remove('hidden');
+  document.getElementById('fc-click-hint').classList.add('hidden');
+
+  const loadingSpan = loading.querySelector('span');
+  loadingSpan.textContent = 'Loading station data\u2026';
+  const spinner = loading.querySelector('.fc-spin-ring');
+  spinner.style.display = '';
+
+  document.getElementById('fc-forecast-location').textContent =
+    `${station.name} \u00b7 ${station.altitude != null ? station.altitude + ' m \u00b7 ' : ''}MeteoNetwork`;
+
+  try {
+    const url = `${METEONETWORK_BASE}/data-realtime/${encodeURIComponent(station.code)}`;
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${METEONETWORK_TOKEN}` } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+    const stationData = json[0];
+    if (!stationData) throw new Error('No data returned');
+    lastForecastData = { isMeteonetwork: true, station, stationData };
+    renderMeteonetworkStationData(stationData, station);
+    loading.classList.add('hidden');
+    stationDataEl.classList.remove('hidden');
+  } catch (err) {
+    console.error('MeteoNetwork station data error:', err);
+    spinner.style.display = 'none';
+    loadingSpan.textContent = '\u26a0\ufe0f Error loading station data. The service may be temporarily unavailable.';
+  }
+}
+
+function renderMeteonetworkStationData(data, station) {
+  const stationDataEl = document.getElementById('fc-station-data');
+  const panel  = document.getElementById('fc-forecast-panel');
+  panel.classList.remove('hidden');
+  resetPanelContent();
+  document.getElementById('fc-forecast-loading').classList.add('hidden');
+  document.getElementById('fc-click-hint').classList.add('hidden');
+
+  document.getElementById('fc-forecast-location').textContent =
+    `${station.name} \u00b7 ${station.altitude != null ? station.altitude + ' m \u00b7 ' : ''}MeteoNetwork`;
+
+  const useKt    = windUnit === 'kt';
+  const toUnit   = v => isFinite(v) ? (useKt ? v * MS_TO_KT : v) : v;
+  const unitLabel = useKt ? 'kt' : 'm/s';
+
+  const compassDir = (deg) => {
+    if (!isFinite(deg)) return '';
+    const dirs = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+    return dirs[Math.round(((deg % 360) + 360) % 360 / 22.5) % 16];
+  };
+
+  // MeteoNetwork timestamps are UTC-based
+  const ts = data.observation_time_utc
+    ? new Date(data.observation_time_utc.replace(' ', 'T') + 'Z')
+    : null;
+  const timeFmt = ts
+    ? (displayTZ === 'UTC'
+        ? `${ts.toISOString().replace('T', ' ').substring(0, 16)} UTC`
+        : ts.toLocaleString())
+    : '';
+
+  // Parse fields — MeteoNetwork sends wind_speed in m/s
+  const temp     = parseFloat(data.temperature);
+  const rh       = parseFloat(data.rh);
+  const wind     = parseFloat(data.wind_speed);
+  const windDeg  = parseFloat(data.wind_direction_degree);
+  const gust     = parseFloat(data.wind_gust);
+  const pressure = parseFloat(data.smlp);
+  const rain     = parseFloat(data.daily_rain);
+  const rad      = parseFloat(data.rad);
+
+  let html = timeFmt ? `<div class="fc-station-time">Measured at ${timeFmt}</div>` : '';
+  html += '<h3 class="fc-section-heading">Current observations</h3>';
+  html += '<div class="fc-station-grid">';
+
+  if (isFinite(temp)) {
+    html += `<div class="fc-station-param">
+      <span class="fc-sp-icon">\u{1F321}\uFE0F</span>
+      <span class="fc-sp-val" style="background:${tempColor(temp)}">${temp.toFixed(1)} \u00B0C</span>
+      <span class="fc-sp-label">Temperature</span>
+    </div>`;
+  }
+  if (isFinite(rh)) {
+    html += `<div class="fc-station-param">
+      <span class="fc-sp-icon">\u{1F4A7}</span>
+      <span class="fc-sp-val">${rh.toFixed(0)} %</span>
+      <span class="fc-sp-label">Humidity</span>
+    </div>`;
+  }
+  if (isFinite(pressure)) {
+    html += `<div class="fc-station-param">
+      <span class="fc-sp-icon">\u{1F4CA}</span>
+      <span class="fc-sp-val">${pressure.toFixed(1)} hPa</span>
+      <span class="fc-sp-label">Pressure</span>
+    </div>`;
+  }
+  if (isFinite(wind)) {
+    const dir = isFinite(windDeg) ? ` ${compassDir(windDeg)}` : '';
+    html += `<div class="fc-station-param">
+      <span class="fc-sp-icon">\u{1F4A8}</span>
+      <span class="fc-sp-val">${toUnit(wind).toFixed(1)} ${unitLabel}${dir}</span>
+      <span class="fc-sp-label">Wind</span>
+    </div>`;
+  }
+  if (isFinite(gust) && gust > 0) {
+    html += `<div class="fc-station-param">
+      <span class="fc-sp-icon">\u{1F32C}\uFE0F</span>
+      <span class="fc-sp-val" style="color:${windColor(gust)}">${toUnit(gust).toFixed(1)} ${unitLabel}</span>
+      <span class="fc-sp-label">Gusts</span>
+    </div>`;
+  }
+  if (isFinite(rain) && rain > 0) {
+    html += `<div class="fc-station-param">
+      <span class="fc-sp-icon">\u{1F327}\uFE0F</span>
+      <span class="fc-sp-val">${rain.toFixed(1)} mm</span>
+      <span class="fc-sp-label">Rain (today)</span>
+    </div>`;
+  }
+  if (isFinite(rad) && rad >= 0) {
+    html += `<div class="fc-station-param">
+      <span class="fc-sp-icon">\u2600\uFE0F</span>
+      <span class="fc-sp-val">${Math.round(rad)} W/m\u00B2</span>
+      <span class="fc-sp-label">Solar radiation</span>
+    </div>`;
+  }
+  html += '</div>';
+  html += `<div class="fc-station-credit">Data: <a href="https://www.meteonetwork.it/" target="_blank" rel="noopener">MeteoNetwork</a> (CC BY 4.0)</div>`;
+  stationDataEl.innerHTML = html;
+  stationDataEl.classList.remove('hidden');
+}
+
+
 function parseTrentinoXML(xml) {
   const ns = 'http://www.meteotrentino.it/';
   const getEls = tag => [...xml.getElementsByTagNameNS(ns, tag)];
@@ -2120,6 +2318,52 @@ function makeHistoryChart({ title, times, values, color, yMin0 = false, yMax = n
 
   // Border
   svg.appendChild(el('rect', { x: ML, y: MT, width: CW, height: CH, fill: 'none', stroke: 'rgba(255,255,255,0.08)', 'stroke-width': '1' }));
+
+  // ── Interactive crosshair ──
+  const hairG = el('g', { visibility: 'hidden', 'pointer-events': 'none' });
+  const hairLine = el('line', { x1: 0, x2: 0, y1: MT, y2: MT + CH, stroke: 'rgba(255,255,255,0.45)', 'stroke-width': '1', 'stroke-dasharray': '3,2' });
+  const hairDot  = el('circle', { cx: 0, cy: 0, r: '3.5', fill: color, stroke: 'rgba(255,255,255,0.8)', 'stroke-width': '1.5' });
+  const hairBg   = el('rect', { rx: '3', ry: '3', fill: 'rgba(20,20,20,0.88)', stroke: 'rgba(255,255,255,0.18)', 'stroke-width': '1' });
+  const hairTxt  = el('text', { 'font-size': '9.5', 'font-family': 'inherit', fill: '#f0f0f0' });
+  hairG.appendChild(hairLine);
+  hairG.appendChild(hairDot);
+  hairG.appendChild(hairBg);
+  hairG.appendChild(hairTxt);
+  svg.appendChild(hairG);
+
+  // Transparent overlay that captures mouse events
+  const overlay = el('rect', { x: ML, y: MT, width: CW, height: CH, fill: 'transparent', style: 'cursor:crosshair' });
+  svg.appendChild(overlay);
+
+  overlay.addEventListener('mousemove', (e) => {
+    const svgRect = svg.getBoundingClientRect();
+    if (!svgRect.width) return;
+    const svgX = (e.clientX - svgRect.left) * (W / svgRect.width);
+    const idx = Math.max(0, Math.min(n - 1, Math.round((svgX - ML) / CW * (n - 1))));
+    const v = values[idx];
+    if (v === null || !isFinite(v)) { hairG.setAttribute('visibility', 'hidden'); return; }
+    const px = xOf(idx);
+    const py = yOf(clamp(v));
+    hairLine.setAttribute('x1', px); hairLine.setAttribute('x2', px);
+    hairDot.setAttribute('cx', px);  hairDot.setAttribute('cy', py);
+    const t = times[idx];
+    const tzOpt2 = displayTZ === 'UTC' ? 'UTC' : undefined;
+    const hh = (displayTZ === 'UTC' ? t.getUTCHours()   : t.getHours()).toString().padStart(2, '0');
+    const mm = (displayTZ === 'UTC' ? t.getUTCMinutes() : t.getMinutes()).toString().padStart(2, '0');
+    const dayFmt = t.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short', timeZone: tzOpt2 });
+    const valStr = Math.abs(v) < 10 ? v.toFixed(1) : Math.round(v).toString();
+    const label  = `${valStr}  ${dayFmt} ${hh}:${mm}`;
+    hairTxt.textContent = label;
+    const approxW = label.length * 5.4 + 10;
+    const approxH = 14;
+    const ttX = (px + 8 + approxW > ML + CW) ? px - approxW - 6 : px + 8;
+    const ttY = Math.max(MT + 4, py - 10);
+    hairBg.setAttribute('x', ttX - 3);      hairBg.setAttribute('y', ttY - 11);
+    hairBg.setAttribute('width', approxW);  hairBg.setAttribute('height', approxH);
+    hairTxt.setAttribute('x', ttX);         hairTxt.setAttribute('y', ttY - 1);
+    hairG.setAttribute('visibility', 'visible');
+  });
+  overlay.addEventListener('mouseleave', () => { hairG.setAttribute('visibility', 'hidden'); });
 
   wrapper.appendChild(svg);
   return wrapper;
