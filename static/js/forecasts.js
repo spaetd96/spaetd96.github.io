@@ -1438,15 +1438,32 @@ async function ensureSiagStations() {
   return siagStations;
 }
 
+async function loadStationSourceSets() {
+  const hasMeteoNetwork = Boolean(METEONETWORK_TOKEN);
+  if (hasMeteoNetwork) {
+    try {
+      const meteonetwork = await ensureMeteonetworkStations();
+      if (meteonetwork.length > 0) {
+        const stations = await ensureStationMeta().catch(() => []);
+        return { stations, siag: [], trentino: [], meteonetwork };
+      }
+    } catch (err) {
+      console.warn('MeteoNetwork station discovery failed, falling back to legacy stations:', err);
+    }
+  }
+
+  const [stations, siag, trentino] = await Promise.all([
+    ensureStationMeta().catch(() => []),
+    ensureSiagStations().catch(() => []),
+    ensureTrentinoStations().catch(() => []),
+  ]);
+  return { stations, siag, trentino, meteonetwork: [] };
+}
+
 async function showStationMarkers() {
   stationMarkerLayer.clearLayers();
   try {
-    const [stations, siag, trentino, meteonetwork] = await Promise.all([
-      ensureStationMeta(),
-      ensureSiagStations().catch(() => []),
-      ensureTrentinoStations().catch(() => []),
-      ensureMeteonetworkStations().catch(() => []),
-    ]);
+    const { stations, siag, trentino, meteonetwork } = await loadStationSourceSets();
     for (const s of stations) {
       const marker = L.circleMarker([s.lat, s.lon], {
         radius: 8,
@@ -1458,6 +1475,22 @@ async function showStationMarkers() {
       marker.bindTooltip(s.name, { direction: 'top', offset: [0, -6] });
       marker.on('click', () => onStationClick(s, marker));
       stationMarkerLayer.addLayer(marker);
+    }
+    if (meteonetwork.length > 0) {
+      for (const s of meteonetwork) {
+        if (!isFinite(s.lat) || !isFinite(s.lon)) continue;
+        const marker = L.circleMarker([s.lat, s.lon], {
+          radius: 8,
+          color: '#66bb6a',
+          fillColor: '#66bb6a',
+          fillOpacity: 0.7,
+          weight: 1.5,
+        });
+        marker.bindTooltip(`${s.name} (MeteoNetwork)`, { direction: 'top', offset: [0, -6] });
+        marker.on('click', () => onMeteonetworkStationClick(s, marker));
+        stationMarkerLayer.addLayer(marker);
+      }
+      return;
     }
     for (const s of siag) {
       if (!isFinite(s.lat) || !isFinite(s.lon)) continue;
@@ -1483,19 +1516,6 @@ async function showStationMarkers() {
       });
       marker.bindTooltip(`${s.name} (Trentino)`, { direction: 'top', offset: [0, -6] });
       marker.on('click', () => onTrentinoStationClick(s, marker));
-      stationMarkerLayer.addLayer(marker);
-    }
-    for (const s of meteonetwork) {
-      if (!isFinite(s.lat) || !isFinite(s.lon)) continue;
-      const marker = L.circleMarker([s.lat, s.lon], {
-        radius: 8,
-        color: '#66bb6a',
-        fillColor: '#66bb6a',
-        fillOpacity: 0.7,
-        weight: 1.5,
-      });
-      marker.bindTooltip(`${s.name} (MeteoNetwork)`, { direction: 'top', offset: [0, -6] });
-      marker.on('click', () => onMeteonetworkStationClick(s, marker));
       stationMarkerLayer.addLayer(marker);
     }
   } catch (err) {
@@ -1739,11 +1759,102 @@ function renderMeteonetworkStationData(data, station) {
     </div>`;
   }
   html += '</div>';
+  if (METEONETWORK_TOKEN) {
+    html += `<div class="fc-hist-btn-wrap">
+      <button class="fc-hist-btn" id="fc-meteonetwork-hist-btn">Show past 24 hours</button>
+    </div>`;
+  }
   html += `<div class="fc-station-credit">Data: <a href="https://www.meteonetwork.it/" target="_blank" rel="noopener">MeteoNetwork</a> (CC BY 4.0)</div>`;
   stationDataEl.innerHTML = html;
   stationDataEl.classList.remove('hidden');
+
+  const histBtn = document.getElementById('fc-meteonetwork-hist-btn');
+  if (histBtn) {
+    histBtn.addEventListener('click', async () => {
+      histBtn.disabled = true;
+      histBtn.textContent = 'Loading…';
+      try {
+        const histData = await fetchMeteonetworkHistory(station.code);
+        if (histData) {
+          histBtn.closest('.fc-hist-btn-wrap').remove();
+          renderMeteonetworkHistoryCharts(histData);
+        } else {
+          histBtn.textContent = 'History unavailable';
+        }
+      } catch (err) {
+        console.warn('MeteoNetwork history unavailable:', err);
+        histBtn.textContent = 'History unavailable';
+      }
+    });
+  }
 }
 
+async function fetchMeteonetworkHistory(stationCode) {
+  if (!METEONETWORK_TOKEN || !stationCode) return null;
+  const today = new Date().toISOString().slice(0, 10);
+  const url = `${METEONETWORK_BASE}/data-archive/${encodeURIComponent(stationCode)}?observation_date=${today}`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${METEONETWORK_TOKEN}` } });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const json = await res.json();
+  if (!Array.isArray(json) || json.length === 0) return null;
+
+  const parseTs = item => {
+    const raw = item.observation_time_utc || item.observation_time_local || '';
+    const candidate = raw.includes('T') ? raw : raw.replace(' ', 'T');
+    const ts = new Date(candidate + (raw.includes('Z') || raw.includes('+') ? '' : 'Z'));
+    return isFinite(ts.getTime()) ? ts : null;
+  };
+
+  const rows = json
+    .map(item => {
+      const ts = parseTs(item);
+      if (!ts) return null;
+      return {
+        ts,
+        temp: parseFloat(item.temperature),
+        humidity: parseFloat(item.rh),
+        pressure: parseFloat(item.smlp),
+        wind: parseFloat(item.wind_speed),
+      };
+    })
+    .filter(Boolean);
+
+  if (rows.length < 2) return null;
+
+  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const recent = rows.filter(item => item.ts >= cutoff);
+  if (recent.length < 2) return null;
+
+  return {
+    times: recent.map(item => item.ts),
+    temp: recent.map(item => item.temp),
+    humidity: recent.map(item => item.humidity),
+    pressure: recent.map(item => item.pressure),
+    wind: recent.map(item => item.wind),
+  };
+}
+
+function renderMeteonetworkHistoryCharts(histData) {
+  const container = document.getElementById('fc-station-data');
+  const existing = container.querySelector('.fc-station-charts');
+  if (existing) existing.remove();
+
+  const useKt = windUnit === 'kt';
+  const toWind = v => (v !== null && isFinite(v)) ? (useKt ? v * MS_TO_KT : v) : v;
+  const windLabel = useKt ? 'kt' : 'm/s';
+
+  const wrap = document.createElement('div');
+  wrap.className = 'fc-station-charts';
+  const histHeading = document.createElement('h3');
+  histHeading.className = 'fc-section-heading';
+  histHeading.textContent = 'Last 24 hours';
+  wrap.appendChild(histHeading);
+  wrap.appendChild(makeHistoryChart({ title: 'Temperature (°C)', times: histData.times, values: histData.temp, color: '#ef9a9a' }));
+  wrap.appendChild(makeHistoryChart({ title: 'Humidity (%)', times: histData.times, values: histData.humidity, color: '#64b5f6', yMin0: true, yMax: 100 }));
+  wrap.appendChild(makeHistoryChart({ title: 'Pressure (hPa)', times: histData.times, values: histData.pressure, color: '#80cbc4' }));
+  wrap.appendChild(makeHistoryChart({ title: `Wind (${windLabel})`, times: histData.times, values: histData.wind.map(toWind), color: '#ce93d8', yMin0: true }));
+  container.appendChild(wrap);
+}
 
 function parseTrentinoXML(xml) {
   const ns = 'http://www.meteotrentino.it/';
