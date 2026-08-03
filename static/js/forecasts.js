@@ -94,8 +94,7 @@ const MS_TO_KT = 1.94384;
 // MeteoNetwork API — get a free token at https://my.meteonetwork.it/
 // POST https://api.meteonetwork.it/v3/login  (email + password) to obtain the token.
 // A BULK-type token is required to discover stations by geographic area.
-// Leave empty to disable MeteoNetwork stations.
-const METEONETWORK_TOKEN = '';
+const METEONETWORK_TOKEN = '40845|f5a0Ey8u1RcfnWdF58CXhPBJLVQfEQtjYxpX1TUm';
 const METEONETWORK_BASE  = 'https://api.meteonetwork.it/v3';
 
 // Temperature colour stops (value → [r,g,b])
@@ -1759,11 +1758,9 @@ function renderMeteonetworkStationData(data, station) {
     </div>`;
   }
   html += '</div>';
-  if (METEONETWORK_TOKEN) {
-    html += `<div class="fc-hist-btn-wrap">
-      <button class="fc-hist-btn" id="fc-meteonetwork-hist-btn">Show past 24 hours</button>
-    </div>`;
-  }
+  html += `<div class="fc-hist-btn-wrap">
+    <button class="fc-hist-btn" id="fc-meteonetwork-hist-btn">Show past 24 hours</button>
+  </div>`;
   html += `<div class="fc-station-credit">Data: <a href="https://www.meteonetwork.it/" target="_blank" rel="noopener">MeteoNetwork</a> (CC BY 4.0)</div>`;
   stationDataEl.innerHTML = html;
   stationDataEl.classList.remove('hidden');
