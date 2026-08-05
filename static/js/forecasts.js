@@ -75,9 +75,9 @@ const MODELS = {
   },
   stations: {
     label:    'Stations',
-    desc:     'Current weather from ~260 Austrian TAWES stations + South Tyrol (SIAG) stations + Trentino (Meteotrentino) stations + MeteoNetwork volunteer stations · 24 h history for Austrian stations',
+    desc:     'Current weather from ~260 Austrian TAWES stations + South Tyrol (SIAG) stations + Trentino (Meteotrentino) stations · 24 h history for Austrian stations',
     dataUrl:  'https://data.hub.geosphere.at/dataset/tawes-v1-10min',
-    dataUrl2: 'https://data.hub.geosphere.at/dataset/klima-v2-1h',
+    dataUrl2: 'https://data.hub.geosphere.at/dataset/tawes-v1-10min',
     doi:      null,
     doiUrl:   null,
     isStation: true,
@@ -86,16 +86,10 @@ const MODELS = {
 
 const TAWES_RESOURCE = 'tawes-v1-10min';
 const STATION_PARAMS = 'TL,RR,FF,DD,FFX,RF,P,SCHNEE';
-const KLIMA_V2_RESOURCE = 'klima-v2-1h';
-const HIST_PARAMS = 'tl,rf,p,ff';
+const HIST_RESOURCE = 'tawes-v1-10min';
+const HIST_PARAMS = 'TL,RF,P,FF';
 
 const MS_TO_KT = 1.94384;
-
-// MeteoNetwork API — get a free token at https://my.meteonetwork.it/
-// POST https://api.meteonetwork.it/v3/login  (email + password) to obtain the token.
-// A BULK-type token is required to discover stations by geographic area.
-const METEONETWORK_TOKEN = '40845|f5a0Ey8u1RcfnWdF58CXhPBJLVQfEQtjYxpX1TUm';
-const METEONETWORK_BASE  = 'https://api.meteonetwork.it/v3';
 
 // Temperature colour stops (value → [r,g,b])
 const TEMP_STOPS = [
@@ -130,13 +124,12 @@ const WIND_STOPS = [
 
 // ── State ────────────────────────────────────────────────────────────────────
 
-let map, pinMarker = null, currentModel = 'ifs', windUnit = 'kt', displayTZ = 'local';
+let map, pinMarker = null, currentModel = 'stations', windUnit = 'kt', displayTZ = 'local';
 let lastForecastData = null;
 let lastHistData = null;
 let stationMeta = null;
 let siagStations = null;
 let trentinoStations = null;
-let meteonetworkStations = null;
 let stationMarkerLayer = null;
 let nearestStationMarker = null;
 let selectedStationMarker = null;
@@ -149,7 +142,9 @@ document.addEventListener('DOMContentLoaded', () => {
   initMap();
   initControls();
   initSearch();
+  document.getElementById('fc-model-select').value = currentModel;
   updateInfoBox();
+  applyModelSelectionState();
 });
 
 function initMap() {
@@ -179,23 +174,7 @@ function initControls() {
   document.getElementById('fc-model-select').addEventListener('change', e => {
     currentModel = e.target.value;
     updateInfoBox();
-    const m = MODELS[currentModel];
-    if (m.isStation) {
-      showStationMarkers();
-      document.getElementById('fc-click-hint').textContent = 'Click on a station to see current measurements';
-      document.getElementById('fc-click-hint').classList.remove('hidden');
-      document.getElementById('fc-forecast-panel').classList.add('hidden');
-      if (pinMarker) { pinMarker.remove(); pinMarker = null; }
-      if (nearestStationMarker) { nearestStationMarker.remove(); nearestStationMarker = null; }
-      lastNearestStation = null;
-    } else {
-      hideStationMarkers();
-      document.getElementById('fc-click-hint').textContent = 'Click anywhere on the map to see a weather forecast';
-      if (!document.getElementById('fc-forecast-panel').classList.contains('hidden') && pinMarker) {
-        const ll = pinMarker.getLatLng();
-        fetchAndShowForecast(ll.lat, ll.lng);
-      }
-    }
+    applyModelSelectionState();
   });
 
   document.getElementById('fc-forecast-close').addEventListener('click', () => {
@@ -231,6 +210,27 @@ function initControls() {
   });
 }
 
+function applyModelSelectionState() {
+  const m = MODELS[currentModel];
+  if (m.isStation) {
+    showStationMarkers();
+    document.getElementById('fc-click-hint').textContent = 'Click on a station to see current measurements';
+    document.getElementById('fc-click-hint').classList.remove('hidden');
+    document.getElementById('fc-forecast-panel').classList.add('hidden');
+    if (pinMarker) { pinMarker.remove(); pinMarker = null; }
+    if (nearestStationMarker) { nearestStationMarker.remove(); nearestStationMarker = null; }
+    lastNearestStation = null;
+    return;
+  }
+
+  hideStationMarkers();
+  document.getElementById('fc-click-hint').textContent = 'Click anywhere on the map to see a weather forecast';
+  if (!document.getElementById('fc-forecast-panel').classList.contains('hidden') && pinMarker) {
+    const ll = pinMarker.getLatLng();
+    fetchAndShowForecast(ll.lat, ll.lng);
+  }
+}
+
 /** Hide every content section inside the panel and remove size classes. */
 function resetPanelContent() {
   document.getElementById('fc-forecast-scroll').classList.add('hidden');
@@ -255,8 +255,6 @@ function reRenderCurrent() {
     renderSiagStationData(lastForecastData.station);
   } else if (lastForecastData.isTrentino) {
     renderTrentinoStationData(lastForecastData.stationData, lastForecastData.station);
-  } else if (lastForecastData.isMeteonetwork) {
-    renderMeteonetworkStationData(lastForecastData.stationData, lastForecastData.station);
   } else {
     renderForecastTable(lastForecastData);
     if (lastNearestStation) renderNearestStationBar();
@@ -272,10 +270,9 @@ function updateInfoBox() {
     credit = 'Comparing IFS HRES, ICON-CH and AROME forecasts';
   } else if (m.isStation) {
     credit = `Data: <a href="${m.dataUrl}" target="_blank" rel="noopener">GeoSphere TAWES</a> (current) · ` +
-             `<a href="${m.dataUrl2}" target="_blank" rel="noopener">klima-v2-1h</a> (24 h history) · ` +
+             `<a href="${m.dataUrl2}" target="_blank" rel="noopener">GeoSphere TAWES</a> (24 h history, 30 min display) · ` +
              `<a href="https://weather.province.bz.it/" target="_blank" rel="noopener">SIAG South Tyrol</a> (CC0) · ` +
-             `<a href="https://www.meteotrentino.it/" target="_blank" rel="noopener">Meteotrentino</a> (CC BY 4.0)` +
-             (METEONETWORK_TOKEN ? ` · <a href="https://www.meteonetwork.it/" target="_blank" rel="noopener">MeteoNetwork</a> (CC BY 4.0)` : '');
+             `<a href="https://www.meteotrentino.it/" target="_blank" rel="noopener">Meteotrentino</a> (CC BY 4.0)`;
   } else if (m.isOpenMeteo) {
     credit = `Data: ${m.creditHtml} (CC BY 4.0)`;
   } else {
@@ -1391,22 +1388,8 @@ async function searchLocation(query) {
 
 async function ensureStationMeta() {
   if (stationMeta) return stationMeta;
-  const [tawesJson, klimaJson] = await Promise.all([
-    fetchJSON(`${API_BASE}/station/current/${TAWES_RESOURCE}/metadata`),
-    fetchJSON(`${API_BASE}/station/historical/${KLIMA_V2_RESOURCE}/metadata`),
-  ]);
-  const klimaActive = klimaJson.stations.filter(k => k.is_active);
-  stationMeta = tawesJson.stations
-    .filter(s => s.is_active)
-    .map(s => {
-      let best = null, bestDist = Infinity;
-      for (const k of klimaActive) {
-        const d = (k.lat - s.lat) ** 2 + (k.lon - s.lon) ** 2;
-        if (d < bestDist) { bestDist = d; best = k; }
-      }
-      // Only use klima ID if within ~1km (0.0001 in squared degrees ≈ 1.1km)
-      return { ...s, klimaId: (best && bestDist < 0.0001) ? best.id : null };
-    });
+  const tawesJson = await fetchJSON(`${API_BASE}/station/current/${TAWES_RESOURCE}/metadata`);
+  stationMeta = tawesJson.stations.filter(s => s.is_active);
   return stationMeta;
 }
 
@@ -1438,31 +1421,18 @@ async function ensureSiagStations() {
 }
 
 async function loadStationSourceSets() {
-  const hasMeteoNetwork = Boolean(METEONETWORK_TOKEN);
-  if (hasMeteoNetwork) {
-    try {
-      const meteonetwork = await ensureMeteonetworkStations();
-      if (meteonetwork.length > 0) {
-        const stations = await ensureStationMeta().catch(() => []);
-        return { stations, siag: [], trentino: [], meteonetwork };
-      }
-    } catch (err) {
-      console.warn('MeteoNetwork station discovery failed, falling back to legacy stations:', err);
-    }
-  }
-
   const [stations, siag, trentino] = await Promise.all([
     ensureStationMeta().catch(() => []),
     ensureSiagStations().catch(() => []),
     ensureTrentinoStations().catch(() => []),
   ]);
-  return { stations, siag, trentino, meteonetwork: [] };
+  return { stations, siag, trentino };
 }
 
 async function showStationMarkers() {
   stationMarkerLayer.clearLayers();
   try {
-    const { stations, siag, trentino, meteonetwork } = await loadStationSourceSets();
+    const { stations, siag, trentino } = await loadStationSourceSets();
     for (const s of stations) {
       const marker = L.circleMarker([s.lat, s.lon], {
         radius: 8,
@@ -1474,22 +1444,6 @@ async function showStationMarkers() {
       marker.bindTooltip(s.name, { direction: 'top', offset: [0, -6] });
       marker.on('click', () => onStationClick(s, marker));
       stationMarkerLayer.addLayer(marker);
-    }
-    if (meteonetwork.length > 0) {
-      for (const s of meteonetwork) {
-        if (!isFinite(s.lat) || !isFinite(s.lon)) continue;
-        const marker = L.circleMarker([s.lat, s.lon], {
-          radius: 8,
-          color: '#66bb6a',
-          fillColor: '#66bb6a',
-          fillOpacity: 0.7,
-          weight: 1.5,
-        });
-        marker.bindTooltip(`${s.name} (MeteoNetwork)`, { direction: 'top', offset: [0, -6] });
-        marker.on('click', () => onMeteonetworkStationClick(s, marker));
-        stationMarkerLayer.addLayer(marker);
-      }
-      return;
     }
     for (const s of siag) {
       if (!isFinite(s.lat) || !isFinite(s.lon)) continue;
@@ -1588,269 +1542,6 @@ async function ensureTrentinoStations() {
   }
   trentinoStations = stations;
   return stations;
-}
-
-// ── MeteoNetwork stations (Trentino / Northern Italy) ─────────────────────────
-// Requires a free account at https://my.meteonetwork.it/ and a BULK token.
-// Set METEONETWORK_TOKEN above to enable.
-
-async function ensureMeteonetworkStations() {
-  if (!METEONETWORK_TOKEN) return [];
-  if (meteonetworkStations) return meteonetworkStations;
-  // Geographic search centred on Trentino (46.07°N, 11.12°E, 80 km radius)
-  const url = `${METEONETWORK_BASE}/stations?lat=46.07&lon=11.12&range=80&country=IT`;
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${METEONETWORK_TOKEN}` } });
-  if (!res.ok) {
-    if (res.status === 405) console.warn('MeteoNetwork: a BULK token is required to list stations by area.');
-    throw new Error(`MeteoNetwork stations HTTP ${res.status}`);
-  }
-  const json = await res.json();
-  meteonetworkStations = json
-    .filter(s => s.is_valid === 'Y' && !s.removal_date)
-    .map(s => ({
-      code:     s.code,
-      name:     s.name || `${s.place_name} – ${s.area}`,
-      lat:      parseFloat(s.latitude),
-      lon:      parseFloat(s.longitude),
-      altitude: s.altitude,
-    }))
-    .filter(s => isFinite(s.lat) && isFinite(s.lon));
-  return meteonetworkStations;
-}
-
-async function onMeteonetworkStationClick(station, marker) {
-  if (selectedStationMarker) {
-    const origColor = selectedStationMarker._origColor || '#ff9800';
-    selectedStationMarker.setStyle({ color: origColor, fillColor: origColor });
-  }
-  marker._origColor = '#66bb6a';
-  marker.setStyle({ color: '#26a69a', fillColor: '#26a69a' });
-  selectedStationMarker = marker;
-  lastHistData = null;
-
-  const panel      = document.getElementById('fc-forecast-panel');
-  const loading    = document.getElementById('fc-forecast-loading');
-  const stationDataEl = document.getElementById('fc-station-data');
-  panel.classList.remove('hidden');
-  resetPanelContent();
-  loading.classList.remove('hidden');
-  document.getElementById('fc-click-hint').classList.add('hidden');
-
-  const loadingSpan = loading.querySelector('span');
-  loadingSpan.textContent = 'Loading station data\u2026';
-  const spinner = loading.querySelector('.fc-spin-ring');
-  spinner.style.display = '';
-
-  document.getElementById('fc-forecast-location').textContent =
-    `${station.name} \u00b7 ${station.altitude != null ? station.altitude + ' m \u00b7 ' : ''}MeteoNetwork`;
-
-  try {
-    const url = `${METEONETWORK_BASE}/data-realtime/${encodeURIComponent(station.code)}`;
-    const res = await fetch(url, { headers: { Authorization: `Bearer ${METEONETWORK_TOKEN}` } });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const json = await res.json();
-    const stationData = json[0];
-    if (!stationData) throw new Error('No data returned');
-    lastForecastData = { isMeteonetwork: true, station, stationData };
-    renderMeteonetworkStationData(stationData, station);
-    loading.classList.add('hidden');
-    stationDataEl.classList.remove('hidden');
-  } catch (err) {
-    console.error('MeteoNetwork station data error:', err);
-    spinner.style.display = 'none';
-    loadingSpan.textContent = '\u26a0\ufe0f Error loading station data. The service may be temporarily unavailable.';
-  }
-}
-
-function renderMeteonetworkStationData(data, station) {
-  const stationDataEl = document.getElementById('fc-station-data');
-  const panel  = document.getElementById('fc-forecast-panel');
-  panel.classList.remove('hidden');
-  resetPanelContent();
-  document.getElementById('fc-forecast-loading').classList.add('hidden');
-  document.getElementById('fc-click-hint').classList.add('hidden');
-
-  document.getElementById('fc-forecast-location').textContent =
-    `${station.name} \u00b7 ${station.altitude != null ? station.altitude + ' m \u00b7 ' : ''}MeteoNetwork`;
-
-  const useKt    = windUnit === 'kt';
-  const toUnit   = v => isFinite(v) ? (useKt ? v * MS_TO_KT : v) : v;
-  const unitLabel = useKt ? 'kt' : 'm/s';
-
-  const compassDir = (deg) => {
-    if (!isFinite(deg)) return '';
-    const dirs = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
-    return dirs[Math.round(((deg % 360) + 360) % 360 / 22.5) % 16];
-  };
-
-  // MeteoNetwork timestamps are UTC-based
-  const ts = data.observation_time_utc
-    ? new Date(data.observation_time_utc.replace(' ', 'T') + 'Z')
-    : null;
-  const timeFmt = ts
-    ? (displayTZ === 'UTC'
-        ? `${ts.toISOString().replace('T', ' ').substring(0, 16)} UTC`
-        : ts.toLocaleString())
-    : '';
-
-  // Parse fields — MeteoNetwork sends wind_speed in m/s
-  const temp     = parseFloat(data.temperature);
-  const rh       = parseFloat(data.rh);
-  const wind     = parseFloat(data.wind_speed);
-  const windDeg  = parseFloat(data.wind_direction_degree);
-  const gust     = parseFloat(data.wind_gust);
-  const pressure = parseFloat(data.smlp);
-  const rain     = parseFloat(data.daily_rain);
-  const rad      = parseFloat(data.rad);
-
-  let html = timeFmt ? `<div class="fc-station-time">Measured at ${timeFmt}</div>` : '';
-  html += '<h3 class="fc-section-heading">Current observations</h3>';
-  html += '<div class="fc-station-grid">';
-
-  if (isFinite(temp)) {
-    html += `<div class="fc-station-param">
-      <span class="fc-sp-icon">\u{1F321}\uFE0F</span>
-      <span class="fc-sp-val" style="background:${tempColor(temp)}">${temp.toFixed(1)} \u00B0C</span>
-      <span class="fc-sp-label">Temperature</span>
-    </div>`;
-  }
-  if (isFinite(rh)) {
-    html += `<div class="fc-station-param">
-      <span class="fc-sp-icon">\u{1F4A7}</span>
-      <span class="fc-sp-val">${rh.toFixed(0)} %</span>
-      <span class="fc-sp-label">Humidity</span>
-    </div>`;
-  }
-  if (isFinite(pressure)) {
-    html += `<div class="fc-station-param">
-      <span class="fc-sp-icon">\u{1F4CA}</span>
-      <span class="fc-sp-val">${pressure.toFixed(1)} hPa</span>
-      <span class="fc-sp-label">Pressure</span>
-    </div>`;
-  }
-  if (isFinite(wind)) {
-    const dir = isFinite(windDeg) ? ` ${compassDir(windDeg)}` : '';
-    html += `<div class="fc-station-param">
-      <span class="fc-sp-icon">\u{1F4A8}</span>
-      <span class="fc-sp-val">${toUnit(wind).toFixed(1)} ${unitLabel}${dir}</span>
-      <span class="fc-sp-label">Wind</span>
-    </div>`;
-  }
-  if (isFinite(gust) && gust > 0) {
-    html += `<div class="fc-station-param">
-      <span class="fc-sp-icon">\u{1F32C}\uFE0F</span>
-      <span class="fc-sp-val" style="color:${windColor(gust)}">${toUnit(gust).toFixed(1)} ${unitLabel}</span>
-      <span class="fc-sp-label">Gusts</span>
-    </div>`;
-  }
-  if (isFinite(rain) && rain > 0) {
-    html += `<div class="fc-station-param">
-      <span class="fc-sp-icon">\u{1F327}\uFE0F</span>
-      <span class="fc-sp-val">${rain.toFixed(1)} mm</span>
-      <span class="fc-sp-label">Rain (today)</span>
-    </div>`;
-  }
-  if (isFinite(rad) && rad >= 0) {
-    html += `<div class="fc-station-param">
-      <span class="fc-sp-icon">\u2600\uFE0F</span>
-      <span class="fc-sp-val">${Math.round(rad)} W/m\u00B2</span>
-      <span class="fc-sp-label">Solar radiation</span>
-    </div>`;
-  }
-  html += '</div>';
-  html += `<div class="fc-hist-btn-wrap">
-    <button class="fc-hist-btn" id="fc-meteonetwork-hist-btn">Show past 24 hours</button>
-  </div>`;
-  html += `<div class="fc-station-credit">Data: <a href="https://www.meteonetwork.it/" target="_blank" rel="noopener">MeteoNetwork</a> (CC BY 4.0)</div>`;
-  stationDataEl.innerHTML = html;
-  stationDataEl.classList.remove('hidden');
-
-  const histBtn = document.getElementById('fc-meteonetwork-hist-btn');
-  if (histBtn) {
-    histBtn.addEventListener('click', async () => {
-      histBtn.disabled = true;
-      histBtn.textContent = 'Loading…';
-      try {
-        const histData = await fetchMeteonetworkHistory(station.code);
-        if (histData) {
-          histBtn.closest('.fc-hist-btn-wrap').remove();
-          renderMeteonetworkHistoryCharts(histData);
-        } else {
-          histBtn.textContent = 'History unavailable';
-        }
-      } catch (err) {
-        console.warn('MeteoNetwork history unavailable:', err);
-        histBtn.textContent = 'History unavailable';
-      }
-    });
-  }
-}
-
-async function fetchMeteonetworkHistory(stationCode) {
-  if (!METEONETWORK_TOKEN || !stationCode) return null;
-  const today = new Date().toISOString().slice(0, 10);
-  const url = `${METEONETWORK_BASE}/data-archive/${encodeURIComponent(stationCode)}?observation_date=${today}`;
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${METEONETWORK_TOKEN}` } });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const json = await res.json();
-  if (!Array.isArray(json) || json.length === 0) return null;
-
-  const parseTs = item => {
-    const raw = item.observation_time_utc || item.observation_time_local || '';
-    const candidate = raw.includes('T') ? raw : raw.replace(' ', 'T');
-    const ts = new Date(candidate + (raw.includes('Z') || raw.includes('+') ? '' : 'Z'));
-    return isFinite(ts.getTime()) ? ts : null;
-  };
-
-  const rows = json
-    .map(item => {
-      const ts = parseTs(item);
-      if (!ts) return null;
-      return {
-        ts,
-        temp: parseFloat(item.temperature),
-        humidity: parseFloat(item.rh),
-        pressure: parseFloat(item.smlp),
-        wind: parseFloat(item.wind_speed),
-      };
-    })
-    .filter(Boolean);
-
-  if (rows.length < 2) return null;
-
-  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
-  const recent = rows.filter(item => item.ts >= cutoff);
-  if (recent.length < 2) return null;
-
-  return {
-    times: recent.map(item => item.ts),
-    temp: recent.map(item => item.temp),
-    humidity: recent.map(item => item.humidity),
-    pressure: recent.map(item => item.pressure),
-    wind: recent.map(item => item.wind),
-  };
-}
-
-function renderMeteonetworkHistoryCharts(histData) {
-  const container = document.getElementById('fc-station-data');
-  const existing = container.querySelector('.fc-station-charts');
-  if (existing) existing.remove();
-
-  const useKt = windUnit === 'kt';
-  const toWind = v => (v !== null && isFinite(v)) ? (useKt ? v * MS_TO_KT : v) : v;
-  const windLabel = useKt ? 'kt' : 'm/s';
-
-  const wrap = document.createElement('div');
-  wrap.className = 'fc-station-charts';
-  const histHeading = document.createElement('h3');
-  histHeading.className = 'fc-section-heading';
-  histHeading.textContent = 'Last 24 hours';
-  wrap.appendChild(histHeading);
-  wrap.appendChild(makeHistoryChart({ title: 'Temperature (°C)', times: histData.times, values: histData.temp, color: '#ef9a9a' }));
-  wrap.appendChild(makeHistoryChart({ title: 'Humidity (%)', times: histData.times, values: histData.humidity, color: '#64b5f6', yMin0: true, yMax: 100 }));
-  wrap.appendChild(makeHistoryChart({ title: 'Pressure (hPa)', times: histData.times, values: histData.pressure, color: '#80cbc4' }));
-  wrap.appendChild(makeHistoryChart({ title: `Wind (${windLabel})`, times: histData.times, values: histData.wind.map(toWind), color: '#ce93d8', yMin0: true }));
-  container.appendChild(wrap);
 }
 
 function parseTrentinoXML(xml) {
@@ -2255,30 +1946,26 @@ function renderStationData(params, station, timestamp) {
 
   html += '</div>';
 
-  if (station.klimaId != null) {
-    html += `<div class="fc-hist-btn-wrap">
-      <button class="fc-hist-btn" id="fc-hist-btn">Show past 24 hours</button>
-    </div>
-    <div id="fc-hist-charts-placeholder"></div>`;
-  }
+  html += `<div class="fc-hist-btn-wrap">
+    <button class="fc-hist-btn" id="fc-hist-btn">Show past 24 hours</button>
+  </div>
+  <div id="fc-hist-charts-placeholder"></div>`;
 
   container.innerHTML = html;
 
-  if (station.klimaId != null) {
-    const btn = document.getElementById('fc-hist-btn');
-    btn.addEventListener('click', async () => {
-      btn.disabled = true;
-      btn.textContent = 'Loading…';
-      const histData = await fetchStationHistory(station.klimaId);
-      if (histData) {
-        lastHistData = histData;
-        btn.closest('.fc-hist-btn-wrap').remove();
-        renderStationHistoryCharts(histData);
-      } else {
-        btn.textContent = 'No history data available';
-      }
-    });
-  }
+  const btn = document.getElementById('fc-hist-btn');
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    btn.textContent = 'Loading…';
+    const histData = await fetchStationHistory(station.id);
+    if (histData) {
+      lastHistData = histData;
+      btn.closest('.fc-hist-btn-wrap').remove();
+      renderStationHistoryCharts(histData);
+    } else {
+      btn.textContent = 'No history data available';
+    }
+  });
 
   lastForecastData = { isStation: true, params, station, timestamp };
 }
@@ -2290,7 +1977,7 @@ async function fetchStationHistory(stationId) {
   const now = new Date();
   const end = now.toISOString().substring(0, 16);
   const start = new Date(now - 24 * 3600 * 1000).toISOString().substring(0, 16);
-  const url = `${API_BASE}/station/historical/${KLIMA_V2_RESOURCE}?parameters=${HIST_PARAMS}&station_ids=${stationId}&start=${start}&end=${end}`;
+  const url = `${API_BASE}/station/historical/${HIST_RESOURCE}?parameters=${HIST_PARAMS}&station_ids=${stationId}&start=${start}&end=${end}`;
   try {
     const json = await fetchJSON(url);
     if (!json.timestamps || json.timestamps.length === 0) return null;
@@ -2299,12 +1986,27 @@ async function fetchStationHistory(stationId) {
     const p = feat.properties.parameters;
     const times = json.timestamps.map(ts => new Date(ts));
     if (times.length < 2) return null;
+
+    const tempData = p.TL?.data ?? p.tl?.data ?? [];
+    const humidityData = p.RF?.data ?? p.rf?.data ?? [];
+    const pressureData = p.P?.data ?? p.p?.data ?? [];
+    const windData = p.FF?.data ?? p.ff?.data ?? [];
+
+    // Keep every 30-minute slot to reduce clutter while preserving sub-hourly detail.
+    const sampledIdx = [];
+    for (let i = 0; i < times.length; i++) {
+      const minute = times[i].getUTCMinutes();
+      if (minute === 0 || minute === 30) sampledIdx.push(i);
+    }
+    if (sampledIdx.length < 2) return null;
+
+    const pick = arr => sampledIdx.map(i => (i < arr.length ? arr[i] : null));
     return {
-      times,
-      temp:     p.tl?.data ?? [],
-      humidity: p.rf?.data ?? [],
-      pressure: p.p?.data  ?? [],
-      wind:     p.ff?.data ?? [],
+      times: sampledIdx.map(i => times[i]),
+      temp: pick(tempData),
+      humidity: pick(humidityData),
+      pressure: pick(pressureData),
+      wind: pick(windData),
     };
   } catch {
     return null;
@@ -2460,7 +2162,7 @@ function makeHistoryChart({ title, times, values, color, yMin0 = false, yMax = n
     const mm = (displayTZ === 'UTC' ? t.getUTCMinutes() : t.getMinutes()).toString().padStart(2, '0');
     const dayFmt = t.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short', timeZone: tzOpt2 });
     const unit   = title.match(/\(([^)]+)\)/)?.[1] ?? '';
-    const valStr = Math.abs(v) < 10 ? v.toFixed(1) : Math.round(v).toString();
+    const valStr = v.toFixed(1);
     const label  = `${valStr} ${unit}, ${dayFmt}, ${hh}:${mm}`;
     hairTxt.textContent = label;
     const approxW = label.length * 5.4 + 10;
