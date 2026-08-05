@@ -2090,6 +2090,7 @@ function makeHistoryChart({ title, times, values, color, yMin0 = false, yMax = n
   let prevDK = null;
   for (let i = 0; i < n; i++) {
     const h = getH(times[i]);
+    const m = displayTZ === 'UTC' ? times[i].getUTCMinutes() : times[i].getMinutes();
     const dk = times[i].toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short', timeZone: tzOpt });
     const x = xOf(i);
     if (dk !== prevDK) {
@@ -2099,7 +2100,7 @@ function makeHistoryChart({ title, times, values, color, yMin0 = false, yMax = n
         fill: '#bdbdbd', 'font-size': '8.5', 'font-family': 'inherit', 'font-weight': '600',
       }, dk));
       prevDK = dk;
-    } else if (h % 6 === 0) {
+    } else if (m === 0 && h % 6 === 0) {
       svg.appendChild(el('line', { x1: x, x2: x, y1: MT + CH, y2: MT + CH + 4, stroke: 'rgba(255,255,255,0.1)', 'stroke-width': '1' }));
       svg.appendChild(el('text', {
         x, y: MT + CH + 15, 'text-anchor': 'middle',
