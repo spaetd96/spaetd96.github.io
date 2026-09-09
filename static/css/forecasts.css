@@ -828,7 +828,7 @@ footer        { display: none !important; }
 }
 
 /* Enforce uniform column widths so no-data (empty) cells in shorter-range
-   models (e.g. AROME at 60 h) stay the same width as populated cells in
+  models (e.g. C-LAEF AlpeAdria at 60 h) stay the same width as populated cells in
    longer-range models (IFS / ICON-CH), keeping all three tables in sync
    when the user scrolls horizontally. */
 .fc-compare-section .fc-forecast-table td {

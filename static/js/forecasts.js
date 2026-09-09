@@ -34,7 +34,7 @@ const MODELS = {
   },
   arome: {
     resource: 'nwp-v2-1h-1km',
-    label:    'AROME',
+    label:    'C-LAEF AlpeAdria',
     desc:     'Short-range weather forecast · hourly steps up to 60 h · 1 km grid · temperature, rain, snow, wind, clouds',
     params:   '2t,rain,sf,10u,10v,tcc,10fg',
     dataUrl:  'https://data.hub.geosphere.at/dataset/nwp-v2-1h-1km',
@@ -54,7 +54,7 @@ const MODELS = {
   },
   compare: {
     label:    'Compare',
-    desc:     'Side-by-side comparison of IFS HRES, ICON-CH and AROME forecasts for the same location',
+    desc:     'Side-by-side comparison of IFS HRES, ICON-CH and C-LAEF AlpeAdria forecasts for the same location',
     isCompare: true,
   },
   inca: {
@@ -274,7 +274,7 @@ function updateInfoBox() {
   document.getElementById('fc-info-resolution').textContent = m.desc;
   let credit;
   if (m.isCompare) {
-    credit = 'Comparing IFS HRES, ICON-CH and AROME forecasts';
+    credit = 'Comparing IFS HRES, ICON-CH and C-LAEF AlpeAdria forecasts';
   } else if (m.isStation) {
     credit = `Data: <a href="${m.dataUrl}" target="_blank" rel="noopener">GeoSphere TAWES</a> (current) · ` +
              `<a href="${m.dataUrl2}" target="_blank" rel="noopener">GeoSphere TAWES</a> (24 h history, 30 min display) · ` +
@@ -374,7 +374,7 @@ async function fetchAndShowForecast(lat, lng) {
 
   try {
     if (m.isCompare) {
-      // Compare mode: fetch IFS, ICON-CH, and AROME in parallel
+      // Compare mode: fetch IFS, ICON-CH, and C-LAEF AlpeAdria in parallel
       const results = await fetchCompareData(lat, lng);
       lastForecastData = { isCompare: true, models: results };
       compareScroll.classList.remove('hidden');
@@ -430,10 +430,10 @@ async function fetchAndShowForecast(lat, lng) {
     }
     loading.classList.add('hidden');
 
-    // Show ensemble button only for AROME
+    // Show ensemble button only for C-LAEF AlpeAdria
     if (currentModel === 'arome') {
       ensembleBtnWrap.classList.remove('hidden');
-      document.getElementById('fc-ensemble-btn').textContent = 'Show AROME ensemble range';
+      document.getElementById('fc-ensemble-btn').textContent = 'Show C-LAEF AlpeAdria ensemble range';
       document.getElementById('fc-ensemble-btn').disabled = false;
     }
 
@@ -454,7 +454,7 @@ async function fetchAndShowForecast(lat, lng) {
   }
 }
 
-// ── Fetch + show AROME ensemble (button-triggered) ───────────────────────────
+// ── Fetch + show C-LAEF AlpeAdria ensemble (button-triggered) ────────────────
 
 async function fetchAndShowEnsemble(lat, lng) {
   const panel = document.getElementById('fc-forecast-panel');
@@ -530,7 +530,7 @@ async function fetchMergedIconCH(lat, lng) {
   return merged;
 }
 
-// ── Compare mode: fetch IFS, ICON-CH, AROME ─────────────────────────────────
+// ── Compare mode: fetch IFS, ICON-CH, C-LAEF AlpeAdria ──────────────────────
 
 async function fetchCompareData(lat, lng) {
   const omParams = 'temperature_2m,precipitation,snowfall,wind_speed_10m,wind_direction_10m,wind_gusts_10m,cloud_cover';
@@ -539,7 +539,7 @@ async function fetchCompareData(lat, lng) {
   const ifsUrl = `https://api.open-meteo.com/v1/ecmwf?latitude=${lat.toFixed(4)}&longitude=${lng.toFixed(4)}` +
     `&hourly=${omParams}&forecast_days=5&wind_speed_unit=ms&timezone=UTC`;
 
-  // AROME (GeoSphere direct) — include the snow field so the snow row appears in compare mode too
+  // C-LAEF AlpeAdria (GeoSphere direct) — include snow so the compare table includes its snow row
   const aromeUrl = `${API_BASE}/timeseries/forecast/${MODELS.arome.resource}` +
     `?lat_lon=${lat.toFixed(4)},${lng.toFixed(4)}&parameters=${MODELS.arome.params}`;
 
@@ -570,7 +570,7 @@ async function fetchCompareData(lat, lng) {
     results.push({ label: 'ICON-CH', error: iconChData.reason?.message || 'Failed to load' });
   }
 
-  // Process AROME
+  // Process C-LAEF AlpeAdria
   if (aromeJson.status === 'fulfilled') {
     // Temporarily set currentModel to arome for processTimeseries
     const savedModel = currentModel;
@@ -578,12 +578,12 @@ async function fetchCompareData(lat, lng) {
     try {
       const data = processTimeseries(aromeJson.value);
       data.isEnsemble = false;
-      results.push({ label: 'AROME', data, hasCloudCover: true, gridLat: data.gridLat, gridLon: data.gridLon });
+      results.push({ label: 'C-LAEF AlpeAdria', data, hasCloudCover: true, gridLat: data.gridLat, gridLon: data.gridLon });
     } finally {
       currentModel = savedModel;
     }
   } else {
-    results.push({ label: 'AROME', error: aromeJson.reason?.message || 'Failed to load' });
+    results.push({ label: 'C-LAEF AlpeAdria', error: aromeJson.reason?.message || 'Failed to load' });
   }
 
   // Remap all datasets to a shared unified time axis so columns align perfectly
@@ -773,7 +773,7 @@ function processTimeseries(json) {
 
   const cloudCover = m.hasCloudCover && p.tcc ? p.tcc.data : null;
 
-  // Snow: accumulated fields (mm WE since forecast start) need differencing; v2 AROME's 'sf' is already per-hour
+  // Snow: accumulated fields (mm WE since forecast start) need differencing; C-LAEF's 'sf' is already per-hour
   let snowfall = null;
   const snowField = m.snowField || 'snow_acc';
   if (p[snowField]) {
@@ -1414,27 +1414,34 @@ async function ensureStationMeta() {
 async function ensureSiagStations() {
   if (siagStations) return siagStations;
   const [valleyJson, mountainJson] = await Promise.all([
-    fetchJSON('https://daten.buergernetz.bz.it/services/weather/station?categoryId=1&lang=en&format=json'),
-    fetchJSON('https://daten.buergernetz.bz.it/services/weather/station?categoryId=2&lang=en&format=json'),
+    fetchJSON('https://static-weather.province.bz.it/stations-data/website/valley.json'),
+    fetchJSON('https://static-weather.province.bz.it/stations-data/website/mountain.json'),
   ]);
-  const parseCoord = s => parseFloat(String(s).replace(',', '.'));
-  const rows = [...(valleyJson.rows || []), ...(mountainJson.rows || [])];
-  siagStations = rows.map(r => ({
-    id:        r.id,
-    code:      r.code,
-    name:      r.name,
-    lat:       parseCoord(r.latitude),
-    lon:       parseCoord(r.longitude),
-    altitude:  r.altitude,
-    t:         r.t,
-    rh:        r.rh,
-    ff:        r.ff,    // mean wind km/h
-    bb:        r.bb,    // gust km/h
-    dd:        r.dd,    // wind direction
-    p:         r.p,
-    n:         r.n,     // precip since midnight mm
-    lastUpdated: r.lastUpdated,
-  }));
+  const rows = [...(valleyJson.stations || []), ...(mountainJson.stations || [])];
+  siagStations = rows.map(r => {
+    const measurements = new Map((r.statistics || []).map(s => [s.sensorCode, s]));
+    const value = code => measurements.get(code)?.sensorValue ?? null;
+    const lastUpdated = [...measurements.values()]
+      .map(s => s.sensorLastValidDate)
+      .filter(Boolean)
+      .sort()
+      .at(-1) || null;
+    return {
+      code:      r.code,
+      name:      r.name_en || r.name_de || r.name_it || r.code,
+      lat:       r.lat,
+      lon:       r.lon,
+      altitude:  r.elevation,
+      t:         value('LT'),
+      rh:        value('LF'),
+      ff:        value('WG') * 3.6,
+      bb:        value('WG.BOE') * 3.6,
+      dd:        value('WR'),
+      p:         value('LD.RED'),
+      n:         value('N'),
+      lastUpdated,
+    };
+  });
   return siagStations;
 }
 
