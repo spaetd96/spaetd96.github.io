@@ -33,17 +33,24 @@ const MODELS = {
     creditHtml: '<a href="https://www.meteoswiss.admin.ch/weather/warning-and-forecasting-systems/icon-forecasting-systems.html" target="_blank" rel="noopener">MeteoSwiss ICON-CH1/CH2</a> via <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a>',
   },
   arome: {
-    resource: 'nwp-v1-1h-2500m',
+    resource: 'nwp-v2-1h-1km',
     label:    'AROME',
-    desc:     'Short-range weather forecast · hourly steps up to 60 h · 2.5 km grid · temperature, rain, snow, wind, clouds',
-    params:   't2m,rr_acc,snow_acc,u10m,v10m,tcc,ugust,vgust',
-    dataUrl:  'https://data.hub.geosphere.at/dataset/nwp-v1-1h-2500m',
+    desc:     'Short-range weather forecast · hourly steps up to 60 h · 1 km grid · temperature, rain, snow, wind, clouds',
+    params:   '2t,rain,sf,10u,10v,tcc,10fg',
+    dataUrl:  'https://data.hub.geosphere.at/dataset/nwp-v2-1h-1km',
     doi:      null,
     doiUrl:   null,
     hasCloudCover: true,
-    accumulated:   true,
+    accumulated:   false,
     hasUV:         true,
-    hasUVgust:     true,
+    hasUVgust:     false,
+    tempField:  '2t',
+    rainField:  'rain',
+    snowField:  'sf',
+    snowAccumulated: false,
+    windUField: '10u',
+    windVField: '10v',
+    gustField:  '10fg',
   },
   compare: {
     label:    'Compare',
@@ -64,11 +71,11 @@ const MODELS = {
     hasUVgust:     false,
   },
   ensemble: {
-    resource: 'ensemble-v1-1h-2500m',
+    resource: 'ensemble-v2-1h-1km',
     label:    'Ensemble',
     desc:     'Probabilistic forecast showing uncertainty \u00b7 hourly steps up to 60 h \u00b7 range of likely outcomes',
-    params:   't2m_p10,t2m_p50,t2m_p90,rain_p10,rain_p50,rain_p90,u10m_p10,u10m_p50,u10m_p90,v10m_p10,v10m_p50,v10m_p90',
-    dataUrl:  'https://data.hub.geosphere.at/dataset/ensemble-v1-1h-2500m',
+    params:   '2t_p10,2t_p50,2t_p90,rain_p10,rain_p50,rain_p90,10u_p10,10u_p50,10u_p90,10v_p10,10v_p50,10v_p90',
+    dataUrl:  'https://data.hub.geosphere.at/dataset/ensemble-v2-1h-1km',
     doi:      null,
     doiUrl:   null,
     isEnsemble: true,
@@ -532,9 +539,9 @@ async function fetchCompareData(lat, lng) {
   const ifsUrl = `https://api.open-meteo.com/v1/ecmwf?latitude=${lat.toFixed(4)}&longitude=${lng.toFixed(4)}` +
     `&hourly=${omParams}&forecast_days=5&wind_speed_unit=ms&timezone=UTC`;
 
-  // AROME (GeoSphere direct) — include snow_acc so the snow row appears in compare mode too
-  const aromeUrl = `${API_BASE}/timeseries/forecast/nwp-v1-1h-2500m` +
-    `?lat_lon=${lat.toFixed(4)},${lng.toFixed(4)}&parameters=t2m,rr_acc,snow_acc,u10m,v10m,tcc,ugust,vgust`;
+  // AROME (GeoSphere direct) — include the snow field so the snow row appears in compare mode too
+  const aromeUrl = `${API_BASE}/timeseries/forecast/${MODELS.arome.resource}` +
+    `?lat_lon=${lat.toFixed(4)},${lng.toFixed(4)}&parameters=${MODELS.arome.params}`;
 
   const results = [];
 
@@ -728,20 +735,25 @@ function processTimeseries(json) {
   const p = json.features[0].properties.parameters;
   const m = MODELS[currentModel];
 
-  const temp = p.t2m ? p.t2m.data : [];
+  const tempField = m.tempField || 't2m';
+  const temp = p[tempField] ? p[tempField].data : [];
 
   let rain;
   if (m.accumulated) {
-    const acc = p.rr_acc ? p.rr_acc.data : [];
+    const rainField = m.rainField || 'rr_acc';
+    const acc = p[rainField] ? p[rainField].data : [];
     rain = acc.map((v, i) => i === 0 ? Math.max(0, v) : Math.max(0, v - acc[i - 1]));
   } else {
-    rain = p.rr ? p.rr.data : [];
+    const rainField = m.rainField || 'rr';
+    rain = p[rainField] ? p[rainField].data : [];
   }
 
   let windSpeed, windDir;
   if (m.hasUV) {
-    const u = p.u10m ? p.u10m.data : [];
-    const v = p.v10m ? p.v10m.data : [];
+    const uField = m.windUField || 'u10m';
+    const vField = m.windVField || 'v10m';
+    const u = p[uField] ? p[uField].data : [];
+    const v = p[vField] ? p[vField].data : [];
     windSpeed = u.map((ui, i) => Math.sqrt(ui * ui + v[i] * v[i]));
     windDir   = u.map((ui, i) => (Math.atan2(-ui, -v[i]) * 180 / Math.PI + 360) % 360);
   } else {
@@ -754,17 +766,23 @@ function processTimeseries(json) {
     const ug = p.ugust.data;
     const vg = p.vgust.data;
     gustSpeed = ug.map((ui, i) => Math.sqrt(ui * ui + vg[i] * vg[i]));
-  } else if (!m.hasUVgust && p.fx) {
-    gustSpeed = p.fx.data;
+  } else if (!m.hasUVgust) {
+    const gustField = m.gustField || 'fx';
+    if (p[gustField]) gustSpeed = p[gustField].data;
   }
 
   const cloudCover = m.hasCloudCover && p.tcc ? p.tcc.data : null;
 
-  // AROME snow_acc is accumulated kg/m² (= mm WE); difference to get per-hour mm
+  // Snow: accumulated fields (mm WE since forecast start) need differencing; v2 AROME's 'sf' is already per-hour
   let snowfall = null;
-  if (p.snow_acc) {
-    const acc = p.snow_acc.data;
-    snowfall = acc.map((v, i) => i === 0 ? Math.max(0, v) : Math.max(0, v - acc[i - 1]));
+  const snowField = m.snowField || 'snow_acc';
+  if (p[snowField]) {
+    if (m.snowAccumulated === false) {
+      snowfall = p[snowField].data.map(v => Math.max(0, v));
+    } else {
+      const acc = p[snowField].data;
+      snowfall = acc.map((v, i) => i === 0 ? Math.max(0, v) : Math.max(0, v - acc[i - 1]));
+    }
   }
 
   // Actual grid cell coordinates from the GeoJSON feature geometry
@@ -1024,20 +1042,20 @@ function processEnsembleTimeseries(json) {
   const timestamps = json.timestamps.map(t => new Date(t));
   const p = json.features[0].properties.parameters;
 
-  const tempP10 = p.t2m_p10 ? p.t2m_p10.data : [];
-  const tempP50 = p.t2m_p50 ? p.t2m_p50.data : [];
-  const tempP90 = p.t2m_p90 ? p.t2m_p90.data : [];
+  const tempP10 = p['2t_p10'] ? p['2t_p10'].data : [];
+  const tempP50 = p['2t_p50'] ? p['2t_p50'].data : [];
+  const tempP90 = p['2t_p90'] ? p['2t_p90'].data : [];
 
   const rainP10 = p.rain_p10 ? p.rain_p10.data : [];
   const rainP50 = p.rain_p50 ? p.rain_p50.data : [];
   const rainP90 = p.rain_p90 ? p.rain_p90.data : [];
 
-  const u10 = p.u10m_p10 ? p.u10m_p10.data : [];
-  const u50 = p.u10m_p50 ? p.u10m_p50.data : [];
-  const u90 = p.u10m_p90 ? p.u10m_p90.data : [];
-  const v10 = p.v10m_p10 ? p.v10m_p10.data : [];
-  const v50 = p.v10m_p50 ? p.v10m_p50.data : [];
-  const v90 = p.v10m_p90 ? p.v10m_p90.data : [];
+  const u10 = p['10u_p10'] ? p['10u_p10'].data : [];
+  const u50 = p['10u_p50'] ? p['10u_p50'].data : [];
+  const u90 = p['10u_p90'] ? p['10u_p90'].data : [];
+  const v10 = p['10v_p10'] ? p['10v_p10'].data : [];
+  const v50 = p['10v_p50'] ? p['10v_p50'].data : [];
+  const v90 = p['10v_p90'] ? p['10v_p90'].data : [];
 
   const windP10 = u10.map((u, i) => Math.sqrt(u * u + v10[i] * v10[i]));
   const windP50 = u50.map((u, i) => Math.sqrt(u * u + v50[i] * v50[i]));
