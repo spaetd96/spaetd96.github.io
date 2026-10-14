@@ -82,11 +82,35 @@ const MODELS = {
   },
   spartacus: {
     resource: 'spartacus-v3-1d-1km',
-    label:    'SPARTACUS',
+    label:    'SPARTACUS daily',
+    chipLabel: 'Recent days',
+    pastView: 'daily',
     desc:     'Observed daily temperature, precipitation and sunshine for Austria and border areas · 1 km grid · 1961 until yesterday · anomalies vs 1961–1990 or 1991–2020',
     dataUrl:  'https://data.hub.geosphere.at/dataset/spartacus-v3-1d-1km',
     doi:      '10.60669/5cqg-p427',
     doiUrl:   'https://doi.org/10.60669/5cqg-p427',
+    isHistorical: true,
+  },
+  spartacus_m: {
+    resource: 'spartacus-v3-1m-1km',
+    label:    'SPARTACUS monthly',
+    chipLabel: 'Climate since 1961',
+    pastView: 'monthly',
+    desc:     'Observed monthly temperature, precipitation and sunshine since 1961 · 1 km grid · warming stripes, trends and recent months vs 1961–1990 or 1991–2020',
+    dataUrl:  'https://data.hub.geosphere.at/dataset/spartacus-v3-1m-1km',
+    doi:      '10.60669/34gw-b457',
+    doiUrl:   'https://doi.org/10.60669/34gw-b457',
+    isHistorical: true,
+  },
+  snowgrid: {
+    resource: 'snowgrid_cl-v2-1d-1km',
+    label:    'SNOWGRID-CL',
+    chipLabel: 'Snow',
+    pastView: 'snow',
+    desc:     'Modelled daily snow depth since 1961 · 1 km grid · this winter vs normal and snow days per winter',
+    dataUrl:  'https://data.hub.geosphere.at/dataset/snowgrid_cl-v2-1d-1km',
+    doi:      '10.60669/fsxx-6977',
+    doiUrl:   'https://doi.org/10.60669/fsxx-6977',
     isHistorical: true,
   },
   stations: {
@@ -104,7 +128,7 @@ const MODELS = {
 const MODEL_GROUPS = {
   now:      ['stations', 'inca'],
   forecast: ['ifs', 'icon_ch', 'arome', 'compare'],
-  past:     ['spartacus'],
+  past:     ['spartacus', 'spartacus_m', 'snowgrid'],
 };
 const SELECTABLE_MODELS = Object.values(MODEL_GROUPS).flat();
 
@@ -328,7 +352,7 @@ function renderModelTabs() {
     const chip = document.createElement('button');
     chip.type = 'button';
     chip.className = 'fc-chip' + (key === currentModel ? ' active' : '');
-    chip.textContent = MODELS[key].label;
+    chip.textContent = MODELS[key].chipLabel || MODELS[key].label;
     chip.title = MODELS[key].desc;
     chip.addEventListener('click', () => { if (key !== currentModel) setModel(key); });
     chips.appendChild(chip);
@@ -338,7 +362,7 @@ function renderModelTabs() {
 function defaultHintText() {
   const m = MODELS[currentModel];
   if (m.isStation) return 'Click on a station to see current measurements';
-  if (m.isHistorical) return 'Click anywhere in Austria to see recent observations';
+  if (m.isHistorical) return 'Click anywhere in Austria to see past weather and climate';
   return 'Click anywhere on the map to see a weather forecast';
 }
 

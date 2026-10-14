@@ -858,6 +858,13 @@ footer        { display: none !important; }
 @media (min-width: 900px) {
   .fc-past-charts { grid-template-columns: 1fr 1fr; }
 }
+/* Charts that need the full row (stripes, season charts) */
+.fc-past-charts .fc-chart-wide {
+  grid-column: 1 / -1;
+}
+.fc-past-charts .fc-ens-legend {
+  margin: -2px 0 2px;
+}
 
 #fc-forecast-panel.fc-panel-past {
   max-height: 70vh;
