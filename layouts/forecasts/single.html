@@ -12,6 +12,7 @@
     <div id="fc-tabs" role="tablist">
       <button type="button" class="fc-tab" data-group="now" role="tab">Now</button>
       <button type="button" class="fc-tab" data-group="forecast" role="tab">Forecast</button>
+      <button type="button" class="fc-tab" data-group="past" role="tab">Past</button>
     </div>
     <div id="fc-subchips"></div>
     <div id="fc-info-resolution"></div>
@@ -35,6 +36,7 @@
 
   {{/* Forecast panel (bottom overlay, hidden until map click) */}}
   <div id="fc-forecast-panel" class="hidden">
+    <button type="button" id="fc-panel-handle" aria-label="Collapse or expand panel"><span></span></button>
     <div id="fc-forecast-header">
       <span id="fc-forecast-location"></span>
       <div id="fc-forecast-header-right">
@@ -52,6 +54,8 @@
       <div id="fc-forecast-scroll">
         <table id="fc-forecast-table"></table>
       </div>
+      <div id="fc-table-footer" class="fc-table-footer hidden"></div>
+      <div id="fc-past-data" class="hidden"></div>
       <div id="fc-ensemble-btn-wrap" class="hidden">
         <button id="fc-ensemble-btn">Show C-LAEF AlpeAdria ensemble range</button>
       </div>
@@ -66,4 +70,5 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="{{ "js/forecasts.js" | relURL }}?v={{ now.Unix }}"></script>
+<script src="{{ "js/forecasts-past.js" | relURL }}?v={{ now.Unix }}"></script>
 {{ end }}

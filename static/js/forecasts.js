@@ -80,6 +80,15 @@ const MODELS = {
     doiUrl:   null,
     isEnsemble: true,
   },
+  spartacus: {
+    resource: 'spartacus-v3-1d-1km',
+    label:    'SPARTACUS',
+    desc:     'Observed daily temperature, precipitation and sunshine for Austria and border areas · 1 km grid · 1961 until yesterday · anomalies vs 1991–2020',
+    dataUrl:  'https://data.hub.geosphere.at/dataset/spartacus-v3-1d-1km',
+    doi:      '10.60669/5cqg-p427',
+    doiUrl:   'https://doi.org/10.60669/5cqg-p427',
+    isHistorical: true,
+  },
   stations: {
     label:    'Stations',
     desc:     'Current weather from ~260 Austrian TAWES stations + South Tyrol (SIAG) stations + Trentino (Meteotrentino) stations · 24 h history for Austrian stations',
@@ -95,6 +104,7 @@ const MODELS = {
 const MODEL_GROUPS = {
   now:      ['stations', 'inca'],
   forecast: ['ifs', 'icon_ch', 'arome', 'compare'],
+  past:     ['spartacus'],
 };
 const SELECTABLE_MODELS = Object.values(MODEL_GROUPS).flat();
 
@@ -107,6 +117,22 @@ const HIST_RESOURCE = 'tawes-v1-10min';
 const HIST_PARAMS = 'TL,RF,P,FF';
 
 const MS_TO_KT = 1.94384;
+
+const WIND_UNITS = {
+  kmh: { label: 'km/h', factor: 3.6 },
+  ms:  { label: 'm/s',  factor: 1 },
+  kt:  { label: 'kt',   factor: MS_TO_KT },
+};
+const WIND_UNIT_ORDER = ['kmh', 'ms', 'kt'];
+
+/** Convert a wind speed in m/s to the selected display unit. */
+function windToUnit(ms) {
+  return (ms !== null && isFinite(ms)) ? ms * WIND_UNITS[windUnit].factor : ms;
+}
+
+function windUnitLabel() {
+  return WIND_UNITS[windUnit].label;
+}
 
 // Temperature colour stops (value → [r,g,b])
 const TEMP_STOPS = [
@@ -141,7 +167,7 @@ const WIND_STOPS = [
 
 // ── State ────────────────────────────────────────────────────────────────────
 
-let map, pinMarker = null, currentModel = 'stations', windUnit = 'kt', displayTZ = 'local';
+let map, pinMarker = null, currentModel = 'stations', windUnit = 'kmh', displayTZ = 'local';
 let lastForecastData = null;
 let lastHistData = null;
 let stationMeta = null;
@@ -226,7 +252,7 @@ function initControls() {
   });
 
   document.getElementById('fc-unit-toggle').addEventListener('click', () => {
-    windUnit = windUnit === 'ms' ? 'kt' : 'ms';
+    windUnit = WIND_UNIT_ORDER[(WIND_UNIT_ORDER.indexOf(windUnit) + 1) % WIND_UNIT_ORDER.length];
     savePref('fc.windUnit', windUnit);
     updateToggleLabels();
     reRenderCurrent();
@@ -237,6 +263,21 @@ function initControls() {
     savePref('fc.tz', displayTZ);
     updateToggleLabels();
     reRenderCurrent();
+  });
+
+  // Mobile bottom sheet: tap the handle or swipe to collapse/expand the panel
+  const panel = document.getElementById('fc-forecast-panel');
+  const handle = document.getElementById('fc-panel-handle');
+  handle.addEventListener('click', () => panel.classList.toggle('fc-panel-collapsed'));
+  let touchStartY = null;
+  handle.addEventListener('touchstart', e => { touchStartY = e.touches[0].clientY; }, { passive: true });
+  handle.addEventListener('touchend', e => {
+    if (touchStartY === null) return;
+    const dy = e.changedTouches[0].clientY - touchStartY;
+    touchStartY = null;
+    if (Math.abs(dy) < 30) return;  // treated as a tap (click handler)
+    e.preventDefault();
+    panel.classList.toggle('fc-panel-collapsed', dy > 0);
   });
 
   document.getElementById('fc-ensemble-btn').addEventListener('click', () => {
@@ -272,6 +313,7 @@ function renderModelTabs() {
   });
   const chips = document.getElementById('fc-subchips');
   chips.innerHTML = '';
+  chips.classList.toggle('hidden', MODEL_GROUPS[group].length < 2);
   for (const key of MODEL_GROUPS[group]) {
     const chip = document.createElement('button');
     chip.type = 'button';
@@ -284,9 +326,10 @@ function renderModelTabs() {
 }
 
 function defaultHintText() {
-  return MODELS[currentModel].isStation
-    ? 'Click on a station to see current measurements'
-    : 'Click anywhere on the map to see a weather forecast';
+  const m = MODELS[currentModel];
+  if (m.isStation) return 'Click on a station to see current measurements';
+  if (m.isHistorical) return 'Click anywhere in Austria to see recent observations';
+  return 'Click anywhere on the map to see a weather forecast';
 }
 
 /** Briefly show a message in the hint bubble, then restore the default hint. */
@@ -344,6 +387,7 @@ function placePin(lat, lng) {
  * In station mode this opens the nearest station; otherwise the forecast.
  */
 function selectLocation(lat, lng, { label = null } = {}) {
+  expandPanel();
   selectedLatLng = L.latLng(lat, lng);
   selectedLabel = label;
   writeHash();
@@ -395,13 +439,13 @@ function savePref(key, value) {
 }
 
 function loadPrefs() {
-  windUnit  = loadPref('fc.windUnit', ['kt', 'ms']) || windUnit;
+  windUnit  = loadPref('fc.windUnit', WIND_UNIT_ORDER) || windUnit;
   displayTZ = loadPref('fc.tz', ['UTC', 'local']) || displayTZ;
   updateToggleLabels();
 }
 
 function updateToggleLabels() {
-  document.getElementById('fc-unit-toggle').textContent = windUnit === 'ms' ? 'm/s' : 'kt';
+  document.getElementById('fc-unit-toggle').textContent = windUnitLabel();
   document.getElementById('fc-tz-toggle').textContent = displayTZ === 'UTC' ? 'UTC' : 'Local';
 }
 
@@ -433,13 +477,15 @@ function initLocate() {
 /** Hide every content section inside the panel and remove size classes. */
 function resetPanelContent() {
   document.getElementById('fc-forecast-scroll').classList.add('hidden');
+  document.getElementById('fc-table-footer').classList.add('hidden');
+  document.getElementById('fc-past-data').classList.add('hidden');
   document.getElementById('fc-ensemble-scroll').classList.add('hidden');
   document.getElementById('fc-ensemble-btn-wrap').classList.add('hidden');
   document.getElementById('fc-compare-scroll').classList.add('hidden');
   document.getElementById('fc-station-data').classList.add('hidden');
   document.getElementById('fc-nearest-station').classList.add('hidden');
   const panel = document.getElementById('fc-forecast-panel');
-  panel.classList.remove('fc-panel-ensemble', 'fc-panel-compare');
+  panel.classList.remove('fc-panel-ensemble', 'fc-panel-compare', 'fc-panel-past');
 }
 
 function reRenderCurrent() {
@@ -454,6 +500,8 @@ function reRenderCurrent() {
     renderSiagStationData(lastForecastData.station);
   } else if (lastForecastData.isTrentino) {
     renderTrentinoStationData(lastForecastData.stationData, lastForecastData.station);
+  } else if (lastForecastData.isPast) {
+    renderPast(lastForecastData);
   } else {
     renderForecastTable(lastForecastData);
     if (lastNearestStation) renderNearestStationBar();
@@ -589,6 +637,11 @@ async function fetchAndShowForecast(lat, lng) {
   setForecastLocationEl(lat, lng, null, m.label);
 
   try {
+    if (m.isHistorical) {
+      await fetchAndShowPast(lat, lng);
+      return;
+    }
+
     if (m.isCompare) {
       // Compare mode: fetch IFS, ICON-CH, and C-LAEF AlpeAdria in parallel
       const results = await fetchCompareData(lat, lng);
@@ -608,6 +661,7 @@ async function fetchAndShowForecast(lat, lng) {
       scroll.classList.remove('hidden');
       renderForecastTable(lastForecastData);
       loading.classList.add('hidden');
+      addClimateContext(lat, lng, lastForecastData);
       return;
     }
 
@@ -645,6 +699,9 @@ async function fetchAndShowForecast(lat, lng) {
       renderForecastTable(lastForecastData);
     }
     loading.classList.add('hidden');
+
+    // Climate context makes little sense for the 3 h nowcast
+    if (!m.isEnsemble && currentModel !== 'inca') addClimateContext(lat, lng, lastForecastData);
 
     // Show ensemble button only for C-LAEF AlpeAdria
     if (currentModel === 'arome') {
@@ -873,6 +930,8 @@ function renderCompareView(models) {
     } else {
       heading.textContent = entry.label;
     }
+    const run = entry.data ? modelRunText(entry.data.refTime) : '';
+    if (run) heading.textContent += ` · ${run}`;
     section.appendChild(heading);
 
     if (entry.error) {
@@ -892,6 +951,14 @@ function renderCompareView(models) {
     container.appendChild(section);
   }
 
+  const firstOk = models.find(e => e.data);
+  if (firstOk) {
+    const footer = document.createElement('div');
+    footer.className = 'fc-table-footer';
+    footer.appendChild(buildTableFooter({}));
+    container.appendChild(footer);
+  }
+
   // Sync horizontal scroll across all three forecast tables
   const scrollWrappers = [...container.querySelectorAll('.fc-forecast-scroll')];
   let activeScroller = null;
@@ -904,6 +971,10 @@ function renderCompareView(models) {
       }
       requestAnimationFrame(() => { activeScroller = null; });
     }, { passive: true });
+  }
+  if (firstOk && !scrolledToNow.has(models)) {
+    scrolledToNow.add(models);
+    scrollWrappers.forEach(w => scrollTableToNow(w, w.querySelector('table')));
   }
 }
 
@@ -1013,17 +1084,103 @@ function processTimeseries(json) {
 
 // ── Render Windy-style forecast table ────────────────────────────────────────
 
+const scrolledToNow = new WeakSet();
+
 function renderForecastTable(data) {
   const table = document.getElementById('fc-forecast-table');
+  const wrapper = document.getElementById('fc-forecast-scroll');
+  const keepScroll = wrapper.scrollLeft;  // re-rendering empties the table briefly
   renderForecastTableInto(table, data);
+  wrapper.scrollLeft = keepScroll;
+
+  const footer = document.getElementById('fc-table-footer');
+  footer.innerHTML = '';
+  footer.appendChild(buildTableFooter(data));
+  footer.classList.remove('hidden');
+
+  // Scroll the current hour into view once per dataset (not on re-renders)
+  if (!scrolledToNow.has(data)) {
+    scrolledToNow.add(data);
+    scrollTableToNow(wrapper, table);
+  }
+}
+
+/** Scroll a table wrapper so the current-hour column sits just right of the label column. */
+function scrollTableToNow(wrapper, table) {
+  const cell  = table.querySelector('.fc-row-hours td.fc-now-col');
+  const label = table.querySelector('.fc-label');
+  if (!cell || !label) return;
+  wrapper.scrollLeft = Math.max(0, cell.offsetLeft - label.offsetWidth - cell.offsetWidth);
+}
+
+/** Index of the column covering the current time, or -1 if now is outside the range. */
+function findNowIndex(times) {
+  const n = times.length;
+  if (n < 2) return -1;
+  const now = Date.now();
+  const step = times[1] - times[0];
+  if (now < times[0].getTime() || now >= times[n - 1].getTime() + step) return -1;
+  for (let i = n - 1; i >= 0; i--) {
+    if (times[i].getTime() <= now) return i;
+  }
+  return -1;
+}
+
+function formatDateTime(d) {
+  const tz = displayTZ === 'UTC' ? 'UTC' : undefined;
+  const date = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: tz });
+  const time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: tz });
+  return `${date} ${time}${displayTZ === 'UTC' ? ' UTC' : ''}`;
+}
+
+/** "Model run 14 Oct 06:00 (5 h ago)", or '' when the run time is unknown. */
+function modelRunText(refTime) {
+  if (!refTime || !isFinite(refTime.getTime())) return '';
+  const hoursAgo = Math.max(0, Math.round((Date.now() - refTime.getTime()) / 3.6e6));
+  return `Model run ${formatDateTime(refTime)} (${hoursAgo} h ago)`;
+}
+
+/** Footer under a forecast table: model run time + colour legends. */
+function buildTableFooter(data) {
+  const wrap = document.createElement('div');
+  wrap.className = 'fc-table-footer-inner';
+
+  const run = modelRunText(data.refTime);
+  if (run) {
+    const runEl = document.createElement('span');
+    runEl.className = 'fc-run-info';
+    runEl.textContent = run;
+    wrap.appendChild(runEl);
+  }
+
+  const legend = (title, gradient, lo, hi) => {
+    const item = document.createElement('span');
+    item.className = 'fc-legend-item';
+    item.innerHTML = `<span class="fc-legend-title">${title}</span><span class="fc-legend-tick">${lo}</span>`
+      + `<span class="fc-legend-bar" style="background:${gradient}"></span><span class="fc-legend-tick">${hi}</span>`;
+    return item;
+  };
+  const tLo = TEMP_STOPS[0][0], tHi = TEMP_STOPS[TEMP_STOPS.length - 1][0];
+  const tempGrad = `linear-gradient(to right, ${TEMP_STOPS.map(([v]) =>
+    `${tempColor(v).replace(/[\d.]+\)$/, '0.9)')} ${((v - tLo) / (tHi - tLo) * 100).toFixed(0)}%`).join(', ')})`;
+  const wHi = WIND_STOPS[WIND_STOPS.length - 1][0];
+  const windGrad = `linear-gradient(to right, ${WIND_STOPS.map(([v]) =>
+    `${windColor(v)} ${(v / wHi * 100).toFixed(0)}%`).join(', ')})`;
+
+  const legends = document.createElement('span');
+  legends.className = 'fc-legends';
+  legends.appendChild(legend('Temp', tempGrad, `${tLo}°`, `${tHi}°`));
+  legends.appendChild(legend('Rain', 'linear-gradient(to right, rgba(30,136,229,0.15), rgba(30,136,229,0.7))', '0.1', '10+ mm'));
+  legends.appendChild(legend('Gusts', windGrad, '0', `${Math.round(windToUnit(wHi))}+ ${windUnitLabel()}`));
+  wrap.appendChild(legends);
+  return wrap;
 }
 
 function renderForecastTableInto(table, data) {
   const { times, temp, rain, snowfall, windSpeed, windDir, gustSpeed, cloudCover, transitionIndex, transitionLabel } = data;
   const hasSnow = snowfall && snowfall.some(v => v !== null && v > 0.05);
-  const useKt = windUnit === 'kt';
-  const unitLabel = useKt ? 'kt' : 'm/s';
-  const toUnit = v => isFinite(v) ? (useKt ? v * MS_TO_KT : v) : v;
+  const unitLabel = windUnitLabel();
+  const toUnit = windToUnit;
   const n = times.length;
   table.innerHTML = '';
 
@@ -1040,12 +1197,26 @@ function renderForecastTableInto(table, data) {
   for (let i = 0; i < n; i++) {
     const k = dayKey(times[i]);
     if (k !== currentDay) {
-      dayGroups.push({ label: k, count: 1 });
+      dayGroups.push({ label: k, start: i, count: 1 });
       currentDay = k;
     } else {
       dayGroups[dayGroups.length - 1].count++;
     }
   }
+
+  // Per-day min/max temperature and precipitation total
+  for (const g of dayGroups) {
+    const idx = Array.from({ length: g.count }, (_, j) => g.start + j);
+    const temps = idx.map(i => temp[i]).filter(v => v !== null && isFinite(v));
+    const precip = idx.reduce((sum, i) => sum + (isFinite(rain[i]) && rain[i] > 0 ? rain[i] : 0), 0);
+    g.tMin = temps.length ? Math.min(...temps) : null;
+    g.tMax = temps.length ? Math.max(...temps) : null;
+    g.precip = precip;
+    // Daily max is only meaningful if the day's afternoon is covered
+    g.hasAfternoon = idx.some(i => times[i].getHours() === 14);
+  }
+
+  const nowIdx = findNowIndex(times);
 
   // Helper: mark no-data cells (from unified time axis fill)
   const applyNoData = (td, val) => {
@@ -1072,6 +1243,14 @@ function renderForecastTableInto(table, data) {
     td.className = 'fc-day-cell';
     td.colSpan = g.count;
     td.textContent = g.label;
+    // Summary only where the day is wide enough to hold it
+    if (g.count >= 6 && g.tMin !== null) {
+      const sum = document.createElement('span');
+      sum.className = 'fc-day-summary';
+      sum.textContent = `${Math.round(g.tMin)}–${Math.round(g.tMax)}°`
+        + (g.precip >= 0.1 ? ` · ${g.precip < 10 ? g.precip.toFixed(1) : Math.round(g.precip)} mm` : '');
+      td.appendChild(sum);
+    }
     dayRow.appendChild(td);
   }
   table.appendChild(dayRow);
@@ -1155,6 +1334,31 @@ function renderForecastTableInto(table, data) {
     tempRow.appendChild(td);
   }
   table.appendChild(tempRow);
+
+  // ── Row 4b: Daily max vs climate normal (SPARTACUS, filled in asynchronously) ──
+  if (data.climate && typeof climateComparison === 'function') {
+    const climRow = document.createElement('tr');
+    climRow.className = 'fc-row-climate';
+    const climLabel = document.createElement('td');
+    climLabel.className = 'fc-label';
+    climLabel.innerHTML = 'vs&nbsp;normal';
+    climLabel.title = 'Forecast daily maximum compared with observed daily maxima (SPARTACUS) around the same date in 1991–2020';
+    climRow.appendChild(climLabel);
+    for (const g of dayGroups) {
+      const td = document.createElement('td');
+      td.colSpan = g.count;
+      td.className = 'fc-climate-cell';
+      const cmp = (g.hasAfternoon && g.tMax !== null && g.count >= 6)
+        ? climateComparison(data.climate, times[g.start], g.tMax) : null;
+      if (cmp) {
+        td.textContent = cmp.text;
+        td.title = cmp.title;
+        td.style.backgroundColor = cmp.color;
+      }
+      climRow.appendChild(td);
+    }
+    table.appendChild(climRow);
+  }
 
   // ── Row 5: Rain ──
   const rainRow = document.createElement('tr');
@@ -1250,6 +1454,16 @@ function renderForecastTableInto(table, data) {
     }
     table.appendChild(gustRow);
   }
+
+  // Highlight the column covering the current time (rows with one cell per timestep)
+  if (nowIdx >= 0) {
+    for (const row of table.rows) {
+      if (row.cells.length === n + 1) row.cells[nowIdx + 1].classList.add('fc-now-col');
+    }
+    const hourCell = table.querySelector('.fc-row-hours').cells[nowIdx + 1];
+    hourCell.classList.add('fc-now-hour');
+    hourCell.title = 'Now';
+  }
 }
 
 // ── Process ensemble API response ────────────────────────────────────────────
@@ -1305,8 +1519,7 @@ function renderEnsembleCharts(data) {
   const container = document.getElementById('fc-ensemble-scroll');
   container.innerHTML = '';
 
-  const useKt = windUnit === 'kt';
-  const toWind = v => isFinite(v) ? (useKt ? v * MS_TO_KT : v) : v;
+  const toWind = windToUnit;
 
   container.appendChild(makeEnsembleChart({
     title: 'Temperature', yUnit: '°C',
@@ -1325,7 +1538,7 @@ function renderEnsembleCharts(data) {
   }));
 
   container.appendChild(makeEnsembleChart({
-    title: 'Wind Speed', yUnit: useKt ? 'kt' : 'm/s',
+    title: 'Wind Speed', yUnit: windUnitLabel(),
     times: data.times,
     p10: data.windP10.map(toWind), p50: data.windP50.map(toWind), p90: data.windP90.map(toWind),
     color: '#80cbc4', bandFill: null,
@@ -1683,7 +1896,12 @@ function addStationMarker(type, s, color, tooltip) {
   stationMarkerIndex.set(s, marker);
 }
 
+function expandPanel() {
+  document.getElementById('fc-forecast-panel').classList.remove('fc-panel-collapsed');
+}
+
 function openStation(type, s, marker) {
+  expandPanel();
   if (type === 'tawes') onStationClick(s, marker);
   else if (type === 'siag') onSiagStationClick(s, marker);
   else onTrentinoStationClick(s, marker);
@@ -1908,9 +2126,8 @@ function renderTrentinoStationData(stationData, station) {
   document.getElementById('fc-forecast-location').textContent =
     `${station.name} \u00b7 ${isFinite(station.elevation) ? station.elevation + ' m \u00b7 ' : ''}Trentino`;
 
-  const useKt = windUnit === 'kt';
-  const toUnit = v => isFinite(v) ? (useKt ? v * MS_TO_KT : v) : v;
-  const unitLabel = useKt ? 'kt' : 'm/s';
+  const toUnit = windToUnit;
+  const unitLabel = windUnitLabel();
 
   const compassDir = (deg) => {
     if (!isFinite(deg)) return '';
@@ -2016,10 +2233,9 @@ function renderSiagStationData(station) {
   document.getElementById('fc-forecast-location').textContent =
     `${station.name} \u00b7 ${station.altitude != null ? station.altitude + ' m' : ''} \u00b7 South Tyrol`;
 
-  const useKt = windUnit === 'kt';
   const KMH_TO_MS = 1 / 3.6;
-  const toUnit = v => isFinite(v) ? (useKt ? v * KMH_TO_MS * MS_TO_KT : v * KMH_TO_MS) : v;
-  const unitLabel = useKt ? 'kt' : 'm/s';
+  const toUnit = v => windToUnit(isFinite(v) ? v * KMH_TO_MS : v);
+  const unitLabel = windUnitLabel();
 
   const compassDir = (deg) => {
     if (!isFinite(deg)) return '';
@@ -2097,9 +2313,8 @@ function renderSiagStationData(station) {
 
 function renderStationData(params, station, timestamp) {
   const container = document.getElementById('fc-station-data');
-  const useKt = windUnit === 'kt';
-  const toUnit = v => isFinite(v) ? (useKt ? v * MS_TO_KT : v) : v;
-  const unitLabel = useKt ? 'kt' : 'm/s';
+  const toUnit = windToUnit;
+  const unitLabel = windUnitLabel();
 
   const ts = new Date(timestamp);
   const timeFmt = displayTZ === 'UTC'
@@ -2260,9 +2475,8 @@ function renderStationHistoryCharts(histData) {
   const container = document.getElementById('fc-station-data');
   const existing = container.querySelector('.fc-station-charts');
   if (existing) existing.remove();
-  const useKt = windUnit === 'kt';
-  const toWind = v => (v !== null && isFinite(v)) ? (useKt ? v * MS_TO_KT : v) : v;
-  const windLabel = useKt ? 'kt' : 'm/s';
+  const toWind = windToUnit;
+  const windLabel = windUnitLabel();
 
   const wrap = document.createElement('div');
   wrap.className = 'fc-station-charts';
@@ -2514,9 +2728,8 @@ function renderNearestStationBar() {
   const nearestBar = document.getElementById('fc-nearest-station');
   if (!lastNearestStation) { nearestBar.classList.add('hidden'); return; }
   const { name, altitude, timestamp, distance, temp, humidity, wind, pressure } = lastNearestStation;
-  const useKt = windUnit === 'kt';
-  const toUnit = v => isFinite(v) ? (useKt ? v * MS_TO_KT : v) : v;
-  const unitLabel = useKt ? 'kt' : 'm/s';
+  const toUnit = windToUnit;
+  const unitLabel = windUnitLabel();
 
   let timeFmt = '';
   if (timestamp) {
