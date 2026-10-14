@@ -91,6 +91,16 @@ const MODELS = {
   },
 };
 
+// Tabs in the info box; each tab offers its models as chips
+const MODEL_GROUPS = {
+  now:      ['stations', 'inca'],
+  forecast: ['ifs', 'icon_ch', 'arome', 'compare'],
+};
+const SELECTABLE_MODELS = Object.values(MODEL_GROUPS).flat();
+
+const MAP_BOUNDS = [[44.0, 6.0], [51.5, 20.5]];
+const MAP_MIN_ZOOM = 7, MAP_MAX_ZOOM = 12;
+
 const TAWES_RESOURCE = 'tawes-v1-10min';
 const STATION_PARAMS = 'TL,RR,FF,DD,FFX,RF,P,SCHNEE';
 const HIST_RESOURCE = 'tawes-v1-10min';
@@ -142,26 +152,37 @@ let nearestStationMarker = null;
 let selectedStationMarker = null;
 let lastNearestStation = null;
 let searchTimeout = null;
+let selectedLatLng = null;     // location kept across model switches
+let selectedLabel = null;      // place name from search, if any
+let stationMarkersReady = Promise.resolve();
+const stationMarkerIndex = new Map();  // station object → its map marker
+const lastModelInGroup = {};
+let hintTimeout = null;
 
 // ── Init ─────────────────────────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', () => {
+  const hash = readHash();
+  loadPrefs();
   initMap();
   initControls();
   initSearch();
-  document.getElementById('fc-model-select').value = currentModel;
-  updateInfoBox();
-  applyModelSelectionState();
+  initLocate();
+  if (hash.latLng || hash.zoom != null) {
+    map.setView(hash.latLng || map.getCenter(), hash.zoom ?? map.getZoom());
+  }
+  selectedLatLng = hash.latLng;
+  setModel(hash.model || currentModel);
 });
 
 function initMap() {
   map = L.map('fc-map', {
     center:   [47.5, 13.0],
     zoom:     7,
-    minZoom:  7,
-    maxZoom:  12,
+    minZoom:  MAP_MIN_ZOOM,
+    maxZoom:  MAP_MAX_ZOOM,
     zoomControl: false,
-    maxBounds: [[44.0, 6.0], [51.5, 20.5]],
+    maxBounds: MAP_BOUNDS,
     maxBoundsViscosity: 1.0,
   });
 
@@ -175,13 +196,16 @@ function initMap() {
   stationMarkerLayer = L.layerGroup().addTo(map);
 
   map.on('click', onMapClick);
+  map.on('moveend', writeHash);
 }
 
 function initControls() {
-  document.getElementById('fc-model-select').addEventListener('change', e => {
-    currentModel = e.target.value;
-    updateInfoBox();
-    applyModelSelectionState();
+  document.querySelectorAll('.fc-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const group = btn.dataset.group;
+      if (group === groupOf(currentModel)) return;
+      setModel(lastModelInGroup[group] || MODEL_GROUPS[group][0]);
+    });
   });
 
   document.getElementById('fc-forecast-close').addEventListener('click', () => {
@@ -195,18 +219,23 @@ function initControls() {
       selectedStationMarker.setStyle({ color: origColor, fillColor: origColor });
       selectedStationMarker = null;
     }
+    selectedLatLng = null;
+    selectedLabel = null;
+    writeHash();
     document.getElementById('fc-click-hint').classList.remove('hidden');
   });
 
   document.getElementById('fc-unit-toggle').addEventListener('click', () => {
     windUnit = windUnit === 'ms' ? 'kt' : 'ms';
-    document.getElementById('fc-unit-toggle').textContent = windUnit === 'ms' ? 'm/s' : 'kt';
+    savePref('fc.windUnit', windUnit);
+    updateToggleLabels();
     reRenderCurrent();
   });
 
   document.getElementById('fc-tz-toggle').addEventListener('click', () => {
     displayTZ = displayTZ === 'UTC' ? 'local' : 'UTC';
-    document.getElementById('fc-tz-toggle').textContent = displayTZ === 'UTC' ? 'UTC' : 'Local';
+    savePref('fc.tz', displayTZ);
+    updateToggleLabels();
     reRenderCurrent();
   });
 
@@ -217,25 +246,188 @@ function initControls() {
   });
 }
 
+// ── Model tabs ───────────────────────────────────────────────────────────────
+
+function groupOf(key) {
+  return Object.keys(MODEL_GROUPS).find(g => MODEL_GROUPS[g].includes(key));
+}
+
+/** Switch to a model: update tabs/chips, info box, map state and URL. */
+function setModel(key) {
+  if (!SELECTABLE_MODELS.includes(key)) key = 'stations';
+  currentModel = key;
+  lastModelInGroup[groupOf(key)] = key;
+  renderModelTabs();
+  updateInfoBox();
+  applyModelSelectionState();
+  writeHash();
+}
+
+function renderModelTabs() {
+  const group = groupOf(currentModel);
+  document.querySelectorAll('.fc-tab').forEach(btn => {
+    const active = btn.dataset.group === group;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-selected', String(active));
+  });
+  const chips = document.getElementById('fc-subchips');
+  chips.innerHTML = '';
+  for (const key of MODEL_GROUPS[group]) {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'fc-chip' + (key === currentModel ? ' active' : '');
+    chip.textContent = MODELS[key].label;
+    chip.title = MODELS[key].desc;
+    chip.addEventListener('click', () => { if (key !== currentModel) setModel(key); });
+    chips.appendChild(chip);
+  }
+}
+
+function defaultHintText() {
+  return MODELS[currentModel].isStation
+    ? 'Click on a station to see current measurements'
+    : 'Click anywhere on the map to see a weather forecast';
+}
+
+/** Briefly show a message in the hint bubble, then restore the default hint. */
+function flashHint(msg) {
+  const hint = document.getElementById('fc-click-hint');
+  hint.textContent = msg;
+  hint.classList.remove('hidden');
+  clearTimeout(hintTimeout);
+  hintTimeout = setTimeout(() => {
+    hint.textContent = defaultHintText();
+    if (selectedLatLng) hint.classList.add('hidden');
+  }, 4000);
+}
+
 function applyModelSelectionState() {
   const m = MODELS[currentModel];
+  const hint = document.getElementById('fc-click-hint');
+  hint.textContent = defaultHintText();
+
   if (m.isStation) {
-    showStationMarkers();
-    document.getElementById('fc-click-hint').textContent = 'Click on a station to see current measurements';
-    document.getElementById('fc-click-hint').classList.remove('hidden');
-    document.getElementById('fc-forecast-panel').classList.add('hidden');
     if (pinMarker) { pinMarker.remove(); pinMarker = null; }
     if (nearestStationMarker) { nearestStationMarker.remove(); nearestStationMarker = null; }
     lastNearestStation = null;
+    stationMarkersReady = showStationMarkers();
+    if (selectedLatLng) {
+      openNearestStation(selectedLatLng.lat, selectedLatLng.lng);
+    } else {
+      hint.classList.remove('hidden');
+      document.getElementById('fc-forecast-panel').classList.add('hidden');
+    }
     return;
   }
 
   hideStationMarkers();
-  document.getElementById('fc-click-hint').textContent = 'Click anywhere on the map to see a weather forecast';
-  if (!document.getElementById('fc-forecast-panel').classList.contains('hidden') && pinMarker) {
-    const ll = pinMarker.getLatLng();
-    fetchAndShowForecast(ll.lat, ll.lng);
+  if (selectedLatLng) {
+    placePin(selectedLatLng.lat, selectedLatLng.lng);
+    hint.classList.add('hidden');
+    fetchAndShowForecast(selectedLatLng.lat, selectedLatLng.lng);
   }
+}
+
+// ── Location selection ───────────────────────────────────────────────────────
+
+function placePin(lat, lng) {
+  if (pinMarker) pinMarker.remove();
+  if (nearestStationMarker) { nearestStationMarker.remove(); nearestStationMarker = null; }
+  lastNearestStation = null;
+  pinMarker = L.circleMarker([lat, lng], {
+    radius: 6, color: '#26a69a', fillColor: '#26a69a', fillOpacity: 0.9, weight: 2,
+  }).addTo(map);
+}
+
+/**
+ * Select a location from a map click, search result, geolocation or permalink.
+ * In station mode this opens the nearest station; otherwise the forecast.
+ */
+function selectLocation(lat, lng, { label = null } = {}) {
+  selectedLatLng = L.latLng(lat, lng);
+  selectedLabel = label;
+  writeHash();
+  document.getElementById('fc-click-hint').classList.add('hidden');
+  if (MODELS[currentModel].isStation) {
+    openNearestStation(lat, lng);
+    return;
+  }
+  placePin(lat, lng);
+  fetchAndShowForecast(lat, lng);
+}
+
+// ── Permalink + preferences ──────────────────────────────────────────────────
+
+/** Parse `#m=<model>&ll=<lat>,<lon>&z=<zoom>`; invalid parts are ignored. */
+function readHash() {
+  const out = { model: null, latLng: null, zoom: null };
+  const params = new URLSearchParams(location.hash.slice(1));
+  const m = params.get('m');
+  if (SELECTABLE_MODELS.includes(m)) out.model = m;
+  const ll = (params.get('ll') || '').split(',').map(Number);
+  if (ll.length === 2 && ll.every(Number.isFinite) && L.latLngBounds(MAP_BOUNDS).contains(ll)) {
+    out.latLng = L.latLng(ll[0], ll[1]);
+  }
+  const z = parseInt(params.get('z'), 10);
+  if (z >= MAP_MIN_ZOOM && z <= MAP_MAX_ZOOM) out.zoom = z;
+  return out;
+}
+
+function writeHash() {
+  if (!map) return;
+  const parts = [`m=${currentModel}`];
+  if (selectedLatLng) parts.push(`ll=${selectedLatLng.lat.toFixed(4)},${selectedLatLng.lng.toFixed(4)}`);
+  parts.push(`z=${map.getZoom()}`);
+  try {
+    history.replaceState(null, '', `${location.pathname}${location.search}#${parts.join('&')}`);
+  } catch (err) { /* ignore (e.g. sandboxed iframe) */ }
+}
+
+function loadPref(key, allowed) {
+  try {
+    const v = localStorage.getItem(key);
+    return allowed.includes(v) ? v : null;
+  } catch (err) { return null; }
+}
+
+function savePref(key, value) {
+  try { localStorage.setItem(key, value); } catch (err) { /* storage unavailable */ }
+}
+
+function loadPrefs() {
+  windUnit  = loadPref('fc.windUnit', ['kt', 'ms']) || windUnit;
+  displayTZ = loadPref('fc.tz', ['UTC', 'local']) || displayTZ;
+  updateToggleLabels();
+}
+
+function updateToggleLabels() {
+  document.getElementById('fc-unit-toggle').textContent = windUnit === 'ms' ? 'm/s' : 'kt';
+  document.getElementById('fc-tz-toggle').textContent = displayTZ === 'UTC' ? 'UTC' : 'Local';
+}
+
+// ── Geolocation ──────────────────────────────────────────────────────────────
+
+function initLocate() {
+  const btn = document.getElementById('fc-locate-btn');
+  if (!('geolocation' in navigator)) { btn.classList.add('hidden'); return; }
+  btn.addEventListener('click', () => {
+    btn.disabled = true;
+    btn.classList.add('fc-locating');
+    const done = () => { btn.disabled = false; btn.classList.remove('fc-locating'); };
+    navigator.geolocation.getCurrentPosition(pos => {
+      done();
+      const { latitude: lat, longitude: lng } = pos.coords;
+      if (!L.latLngBounds(MAP_BOUNDS).contains([lat, lng])) {
+        flashHint('Your location is outside the area covered by this map');
+        return;
+      }
+      map.setView([lat, lng], Math.max(map.getZoom(), 10));
+      selectLocation(lat, lng);
+    }, () => {
+      done();
+      flashHint('Location unavailable');
+    }, { timeout: 10000, maximumAge: 300000 });
+  });
 }
 
 /** Hide every content section inside the panel and remove size classes. */
@@ -292,19 +484,7 @@ function updateInfoBox() {
 // ── Map click ────────────────────────────────────────────────────────────────
 
 function onMapClick(e) {
-  if (MODELS[currentModel].isStation) return;
-
-  const { lat, lng } = e.latlng;
-
-  if (pinMarker) pinMarker.remove();
-  if (nearestStationMarker) { nearestStationMarker.remove(); nearestStationMarker = null; }
-  lastNearestStation = null;
-  pinMarker = L.circleMarker([lat, lng], {
-    radius: 6, color: '#26a69a', fillColor: '#26a69a', fillOpacity: 0.9, weight: 2,
-  }).addTo(map);
-
-  document.getElementById('fc-click-hint').classList.add('hidden');
-  fetchAndShowForecast(lat, lng);
+  selectLocation(e.latlng.lat, e.latlng.lng);
 }
 
 // ── Forecast location label ──────────────────────────────────────────────────
@@ -322,22 +502,58 @@ function onMapClick(e) {
  */
 function setForecastLocationEl(lat, lng, data, label) {
   const el = document.getElementById('fc-forecast-location');
+  const reqId = ++locationLabelReq;
+  let coords = `${lat.toFixed(3)}°N, ${lng.toFixed(3)}°E`;
+  el.title = '';
   if (data && data.gridLat !== undefined && data.gridLon !== undefined) {
     const dist = haversineKm(lat, lng, data.gridLat, data.gridLon);
     if (dist > 2) {
       // Grid cell is noticeably far from the clicked point — show actual coords
-      el.textContent = `${data.gridLat.toFixed(3)}°N, ${data.gridLon.toFixed(3)}°E · ${label}`;
+      coords = `${data.gridLat.toFixed(3)}°N, ${data.gridLon.toFixed(3)}°E`;
       el.title = `You clicked ${lat.toFixed(3)}°N, ${lng.toFixed(3)}°E. `
         + `The nearest model grid cell is ${dist.toFixed(0)} km away. `
         + `Differences vs. other sources that interpolate may be due to this offset.`;
-    } else {
-      el.textContent = `${lat.toFixed(3)}°N, ${lng.toFixed(3)}°E · ${label}`;
-      el.title = '';
     }
-  } else {
-    el.textContent = `${lat.toFixed(3)}°N, ${lng.toFixed(3)}°E · ${label}`;
-    el.title = '';
   }
+
+  const place = selectedLabel || placeNames.get(placeKey(lat, lng));
+  el.textContent = `${place ? place + ' · ' : ''}${coords} · ${label}`;
+
+  // Fill in the place name once known, unless a newer label was set meanwhile
+  if (!place && !placeNames.has(placeKey(lat, lng))) {
+    reverseGeocode(lat, lng).then(name => {
+      if (name && reqId === locationLabelReq) setForecastLocationEl(lat, lng, data, label);
+    });
+  }
+}
+
+// ── Reverse geocoding ────────────────────────────────────────────────────────
+
+const placeNames = new Map();     // key → name (or null when unknown)
+const placeNameRequests = new Map();
+let locationLabelReq = 0;
+
+function placeKey(lat, lng) {
+  return `${lat.toFixed(3)},${lng.toFixed(3)}`;
+}
+
+/** Short place name for a point via Nominatim, e.g. "Innere Stadt, Vienna". Never rejects. */
+function reverseGeocode(lat, lng) {
+  const key = placeKey(lat, lng);
+  if (!placeNameRequests.has(key)) {
+    const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat.toFixed(5)}&lon=${lng.toFixed(5)}&format=json&zoom=14&accept-language=en`;
+    const req = fetchJSON(url).then(json => {
+      const a = json.address || {};
+      const local  = a.village || a.town || a.suburb || a.hamlet || a.city_district;
+      const region = a.city || a.municipality || a.county;
+      return (local && region && local !== region) ? `${local}, ${region}` : (local || region || json.name || null);
+    }).catch(() => null).then(name => {
+      placeNames.set(key, name);
+      return name;
+    });
+    placeNameRequests.set(key, req);
+  }
+  return placeNameRequests.get(key);
 }
 
 // ── Fetch + render forecast ──────────────────────────────────────────────────
@@ -1381,16 +1597,8 @@ async function searchLocation(query) {
           map.flyTo([lat, lon], 10, { duration: 1 });
         }
 
-        if (MODELS[currentModel].isStation) return;
-
-        if (pinMarker) pinMarker.remove();
-        if (nearestStationMarker) { nearestStationMarker.remove(); nearestStationMarker = null; }
-        lastNearestStation = null;
-        pinMarker = L.circleMarker([lat, lon], {
-          radius: 6, color: '#26a69a', fillColor: '#26a69a', fillOpacity: 0.9, weight: 2,
-        }).addTo(map);
-        document.getElementById('fc-click-hint').classList.add('hidden');
-        fetchAndShowForecast(lat, lon);
+        const shortName = item.display_name.split(',').slice(0, 2).join(',').trim();
+        selectLocation(lat, lon, { label: shortName });
       });
       results.appendChild(div);
     }
@@ -1454,47 +1662,57 @@ async function loadStationSourceSets() {
   return { stations, siag, trentino };
 }
 
+/** Add a clickable station marker; clicking also makes it the selected location. */
+function addStationMarker(type, s, color, tooltip) {
+  const marker = L.circleMarker([s.lat, s.lon], {
+    radius: 8,
+    color,
+    fillColor: color,
+    fillOpacity: 0.7,
+    weight: 1.5,
+    bubblingMouseEvents: false,  // don't also trigger the map click handler
+  });
+  marker.bindTooltip(tooltip, { direction: 'top', offset: [0, -6] });
+  marker.on('click', () => {
+    selectedLatLng = L.latLng(s.lat, s.lon);
+    selectedLabel = null;
+    writeHash();
+    openStation(type, s, marker);
+  });
+  stationMarkerLayer.addLayer(marker);
+  stationMarkerIndex.set(s, marker);
+}
+
+function openStation(type, s, marker) {
+  if (type === 'tawes') onStationClick(s, marker);
+  else if (type === 'siag') onSiagStationClick(s, marker);
+  else onTrentinoStationClick(s, marker);
+}
+
+/** Open the station closest to a point (station mode only). */
+async function openNearestStation(lat, lng) {
+  await stationMarkersReady;
+  const found = await findNearestStation(lat, lng);
+  if (!found || !MODELS[currentModel].isStation) return;
+  const marker = stationMarkerIndex.get(found.station);
+  if (marker) openStation(found.type, found.station, marker);
+}
+
 async function showStationMarkers() {
   stationMarkerLayer.clearLayers();
+  stationMarkerIndex.clear();
   try {
     const { stations, siag, trentino } = await loadStationSourceSets();
     for (const s of stations) {
-      const marker = L.circleMarker([s.lat, s.lon], {
-        radius: 8,
-        color: '#ff9800',
-        fillColor: '#ff9800',
-        fillOpacity: 0.7,
-        weight: 1.5,
-      });
-      marker.bindTooltip(s.name, { direction: 'top', offset: [0, -6] });
-      marker.on('click', () => onStationClick(s, marker));
-      stationMarkerLayer.addLayer(marker);
+      addStationMarker('tawes', s, '#ff9800', s.name);
     }
     for (const s of siag) {
       if (!isFinite(s.lat) || !isFinite(s.lon)) continue;
-      const marker = L.circleMarker([s.lat, s.lon], {
-        radius: 8,
-        color: '#29b6f6',
-        fillColor: '#29b6f6',
-        fillOpacity: 0.7,
-        weight: 1.5,
-      });
-      marker.bindTooltip(`${s.name} (South Tyrol)`, { direction: 'top', offset: [0, -6] });
-      marker.on('click', () => onSiagStationClick(s, marker));
-      stationMarkerLayer.addLayer(marker);
+      addStationMarker('siag', s, '#29b6f6', `${s.name} (South Tyrol)`);
     }
     for (const s of trentino) {
       if (!isFinite(s.lat) || !isFinite(s.lon)) continue;
-      const marker = L.circleMarker([s.lat, s.lon], {
-        radius: 8,
-        color: '#29b6f6',
-        fillColor: '#29b6f6',
-        fillOpacity: 0.7,
-        weight: 1.5,
-      });
-      marker.bindTooltip(`${s.name} (Trentino)`, { direction: 'top', offset: [0, -6] });
-      marker.on('click', () => onTrentinoStationClick(s, marker));
-      stationMarkerLayer.addLayer(marker);
+      addStationMarker('trentino', s, '#29b6f6', `${s.name} (Trentino)`);
     }
   } catch (err) {
     console.error('Error loading station metadata:', err);
@@ -2217,6 +2435,23 @@ function haversineDistance(lat1, lon1, lat2, lon2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+/** Nearest station across TAWES, SIAG and Trentino: { station, type, distance } or null. */
+async function findNearestStation(lat, lng) {
+  const { stations, siag, trentino } = await loadStationSourceSets();
+  let best = null;
+  const consider = (list, type) => {
+    for (const s of list) {
+      if (!isFinite(s.lat) || !isFinite(s.lon)) continue;
+      const d = haversineDistance(lat, lng, s.lat, s.lon);
+      if (!best || d < best.distance) best = { station: s, type, distance: d };
+    }
+  };
+  consider(stations, 'tawes');
+  consider(siag, 'siag');
+  consider(trentino, 'trentino');
+  return best;
+}
+
 async function fetchAndShowNearestStation(lat, lng) {
   const nearestBar = document.getElementById('fc-nearest-station');
   nearestBar.classList.add('hidden');
@@ -2224,29 +2459,9 @@ async function fetchAndShowNearestStation(lat, lng) {
   if (nearestStationMarker) { nearestStationMarker.remove(); nearestStationMarker = null; }
 
   try {
-    // Load all station lists in parallel (cached after first call)
-    const [tawes, siag, trentino] = await Promise.all([
-      ensureStationMeta(),
-      ensureSiagStations().catch(() => []),
-      ensureTrentinoStations().catch(() => []),
-    ]);
-
-    // Find nearest across all three types
-    let nearest = null, minDist = Infinity, nearestType = null;
-    for (const s of tawes) {
-      const d = haversineDistance(lat, lng, s.lat, s.lon);
-      if (d < minDist) { minDist = d; nearest = s; nearestType = 'tawes'; }
-    }
-    for (const s of siag) {
-      if (!isFinite(s.lat) || !isFinite(s.lon)) continue;
-      const d = haversineDistance(lat, lng, s.lat, s.lon);
-      if (d < minDist) { minDist = d; nearest = s; nearestType = 'siag'; }
-    }
-    for (const s of trentino) {
-      const d = haversineDistance(lat, lng, s.lat, s.lon);
-      if (d < minDist) { minDist = d; nearest = s; nearestType = 'trentino'; }
-    }
-    if (!nearest) return;
+    const found = await findNearestStation(lat, lng);
+    if (!found) return;
+    const { station: nearest, type: nearestType, distance: minDist } = found;
 
     const markerColor = nearestType === 'tawes' ? '#ff9800' : '#29b6f6';
     nearestStationMarker = L.circleMarker([nearest.lat, nearest.lon], {
