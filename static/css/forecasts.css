@@ -868,6 +868,93 @@ footer        { display: none !important; }
   display: none;
 }
 
+/* ── Shared chart grid (ensemble, station history) ─────────────────────── */
+
+.fc-chart-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+@media (min-width: 900px) {
+  .fc-chart-grid { grid-template-columns: 1fr 1fr; }
+}
+.fc-chart-grid .fc-ens-chart,
+.fc-chart-grid .fc-station-chart {
+  margin-bottom: 0;
+}
+.fc-station-chart {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 6px;
+  padding: 6px 4px 2px;
+}
+
+.fc-hist-note {
+  font-size: 0.72rem;
+  color: #9e9e9e;
+  margin-top: 6px;
+}
+
+/* ── Ensemble header + legend ──────────────────────────────────────────── */
+
+.fc-ens-head .fc-section-heading {
+  margin: 4px 0 4px;
+}
+.fc-ens-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  font-size: 0.72rem;
+  color: #bdbdbd;
+  margin-bottom: 8px;
+}
+.fc-ens-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.fc-ens-swatch-line {
+  display: inline-block;
+  width: 18px;
+  height: 0;
+  border-top: 2.5px solid #e0e0e0;
+}
+.fc-ens-swatch-band {
+  display: inline-block;
+  width: 18px;
+  height: 10px;
+  background: rgba(224,224,224,0.35);
+  border-top: 1px solid rgba(224,224,224,0.6);
+  border-bottom: 1px solid rgba(224,224,224,0.6);
+}
+.fc-ens-hint {
+  color: #757575;
+}
+
+/* Open state of the toggle buttons */
+#fc-ensemble-btn[aria-expanded="true"],
+.fc-hist-btn[aria-expanded="true"] {
+  background: transparent;
+}
+
+/* ── Past controls ─────────────────────────────────────────────────────── */
+
+.fc-past-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 20px;
+  margin-bottom: 10px;
+}
+.fc-past-controls .fc-past-periods {
+  margin-bottom: 0;
+  align-items: center;
+}
+.fc-past-group-label {
+  font-size: 0.7rem;
+  color: #9e9e9e;
+  margin-right: 2px;
+}
+
 /* ── Panel handle (mobile bottom sheet) ────────────────────────────────── */
 
 #fc-panel-handle {

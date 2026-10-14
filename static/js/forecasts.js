@@ -74,7 +74,7 @@ const MODELS = {
     resource: 'ensemble-v2-1h-1km',
     label:    'Ensemble',
     desc:     'Probabilistic forecast showing uncertainty \u00b7 hourly steps up to 60 h \u00b7 range of likely outcomes',
-    params:   '2t_p10,2t_p50,2t_p90,rain_p10,rain_p50,rain_p90,10u_p10,10u_p50,10u_p90,10v_p10,10v_p50,10v_p90',
+    params:   '2t_p10,2t_p50,2t_p90,tp_p10,tp_p50,tp_p90,10fg_p10,10fg_p50,10fg_p90,tcc_p10,tcc_p50,tcc_p90',
     dataUrl:  'https://data.hub.geosphere.at/dataset/ensemble-v2-1h-1km',
     doi:      null,
     doiUrl:   null,
@@ -83,7 +83,7 @@ const MODELS = {
   spartacus: {
     resource: 'spartacus-v3-1d-1km',
     label:    'SPARTACUS',
-    desc:     'Observed daily temperature, precipitation and sunshine for Austria and border areas · 1 km grid · 1961 until yesterday · anomalies vs 1991–2020',
+    desc:     'Observed daily temperature, precipitation and sunshine for Austria and border areas · 1 km grid · 1961 until yesterday · anomalies vs 1961–1990 or 1991–2020',
     dataUrl:  'https://data.hub.geosphere.at/dataset/spartacus-v3-1d-1km',
     doi:      '10.60669/5cqg-p427',
     doiUrl:   'https://doi.org/10.60669/5cqg-p427',
@@ -184,6 +184,10 @@ let stationMarkersReady = Promise.resolve();
 const stationMarkerIndex = new Map();  // station object → its map marker
 const lastModelInGroup = {};
 let hintTimeout = null;
+let ensembleWanted = false;  // user opened the ensemble; keep it open for new locations
+let ensembleCache = null;    // { key, data } for the last fetched point
+let ensembleReq = 0;         // invalidates in-flight ensemble requests
+let histWanted = false;      // same for the station 24 h history
 
 // ── Init ─────────────────────────────────────────────────────────────────────
 
@@ -282,8 +286,14 @@ function initControls() {
 
   document.getElementById('fc-ensemble-btn').addEventListener('click', () => {
     if (!pinMarker) return;
-    const ll = pinMarker.getLatLng();
-    fetchAndShowEnsemble(ll.lat, ll.lng);
+    const open = !document.getElementById('fc-ensemble-scroll').classList.contains('hidden');
+    ensembleWanted = !open;
+    if (open) {
+      hideEnsemble();
+    } else {
+      const ll = pinMarker.getLatLng();
+      showEnsemble(ll.lat, ll.lng);
+    }
   });
 }
 
@@ -481,6 +491,7 @@ function resetPanelContent() {
   document.getElementById('fc-past-data').classList.add('hidden');
   document.getElementById('fc-ensemble-scroll').classList.add('hidden');
   document.getElementById('fc-ensemble-btn-wrap').classList.add('hidden');
+  ensembleReq++;
   document.getElementById('fc-compare-scroll').classList.add('hidden');
   document.getElementById('fc-station-data').classList.add('hidden');
   document.getElementById('fc-nearest-station').classList.add('hidden');
@@ -505,6 +516,8 @@ function reRenderCurrent() {
   } else {
     renderForecastTable(lastForecastData);
     if (lastNearestStation) renderNearestStationBar();
+    const ensembleOpen = !document.getElementById('fc-ensemble-scroll').classList.contains('hidden');
+    if (ensembleOpen && ensembleCache) renderEnsembleCharts(ensembleCache.data);
   }
 }
 
@@ -706,8 +719,8 @@ async function fetchAndShowForecast(lat, lng) {
     // Show ensemble button only for C-LAEF AlpeAdria
     if (currentModel === 'arome') {
       ensembleBtnWrap.classList.remove('hidden');
-      document.getElementById('fc-ensemble-btn').textContent = 'Show C-LAEF AlpeAdria ensemble range';
-      document.getElementById('fc-ensemble-btn').disabled = false;
+      updateEnsembleButton('closed');
+      if (ensembleWanted) showEnsemble(lat, lng);
     }
 
     if (currentModel === 'inca') {
@@ -729,28 +742,51 @@ async function fetchAndShowForecast(lat, lng) {
 
 // ── Fetch + show C-LAEF AlpeAdria ensemble (button-triggered) ────────────────
 
-async function fetchAndShowEnsemble(lat, lng) {
-  const panel = document.getElementById('fc-forecast-panel');
+function updateEnsembleButton(state) {
   const btn = document.getElementById('fc-ensemble-btn');
-  const ensembleScroll = document.getElementById('fc-ensemble-scroll');
-  btn.textContent = 'Loading ensemble…';
-  btn.disabled = true;
+  btn.disabled = state === 'loading';
+  btn.setAttribute('aria-expanded', String(state === 'open'));
+  btn.textContent = {
+    closed:  'Show ensemble range ▾',
+    loading: 'Loading ensemble…',
+    open:    'Hide ensemble range ▴',
+    error:   '⚠️ Ensemble data unavailable · retry',
+  }[state];
+}
 
-  const em = MODELS.ensemble;
-  const url = `${API_BASE}/timeseries/forecast/${em.resource}` +
-              `?lat_lon=${lat.toFixed(4)},${lng.toFixed(4)}&parameters=${em.params}`;
+function hideEnsemble() {
+  ensembleReq++;
+  document.getElementById('fc-ensemble-scroll').classList.add('hidden');
+  document.getElementById('fc-forecast-panel').classList.remove('fc-panel-ensemble');
+  updateEnsembleButton('closed');
+}
 
-  try {
-    const json = await fetchJSON(url);
-    const data = processEnsembleTimeseries(json);
-    panel.classList.add('fc-panel-ensemble');
-    ensembleScroll.classList.remove('hidden');
-    renderEnsembleCharts(data);
-    btn.textContent = 'Ensemble range shown below ↓';
-  } catch (err) {
-    console.error('Ensemble fetch error:', err);
-    btn.textContent = '⚠️ Ensemble data unavailable';
+/** Show the C-LAEF ensemble percentiles under the forecast table (cached per point). */
+async function showEnsemble(lat, lng) {
+  const key = `${lat.toFixed(4)},${lng.toFixed(4)}`;
+  const req = ++ensembleReq;
+  let data = ensembleCache?.key === key ? ensembleCache.data : null;
+
+  if (!data) {
+    updateEnsembleButton('loading');
+    const em = MODELS.ensemble;
+    const url = `${API_BASE}/timeseries/forecast/${em.resource}` +
+                `?lat_lon=${lat.toFixed(4)},${lng.toFixed(4)}&parameters=${em.params}`;
+    try {
+      data = processEnsembleTimeseries(await fetchJSON(url));
+      ensembleCache = { key, data };
+    } catch (err) {
+      console.error('Ensemble fetch error:', err);
+      if (req === ensembleReq) updateEnsembleButton('error');
+      return;
+    }
   }
+  if (req !== ensembleReq || currentModel !== 'arome') return;
+
+  document.getElementById('fc-forecast-panel').classList.add('fc-panel-ensemble');
+  document.getElementById('fc-ensemble-scroll').classList.remove('hidden');
+  renderEnsembleCharts(data);
+  updateEnsembleButton('open');
 }
 
 // ── Fetch merged ICON-CH1 + CH2 ─────────────────────────────────────────────
@@ -1469,48 +1505,18 @@ function renderForecastTableInto(table, data) {
 // ── Process ensemble API response ────────────────────────────────────────────
 
 function processEnsembleTimeseries(json) {
-  const timestamps = json.timestamps.map(t => new Date(t));
   const p = json.features[0].properties.parameters;
-
-  const tempP10 = p['2t_p10'] ? p['2t_p10'].data : [];
-  const tempP50 = p['2t_p50'] ? p['2t_p50'].data : [];
-  const tempP90 = p['2t_p90'] ? p['2t_p90'].data : [];
-
-  const rainP10 = p.rain_p10 ? p.rain_p10.data : [];
-  const rainP50 = p.rain_p50 ? p.rain_p50.data : [];
-  const rainP90 = p.rain_p90 ? p.rain_p90.data : [];
-
-  const u10 = p['10u_p10'] ? p['10u_p10'].data : [];
-  const u50 = p['10u_p50'] ? p['10u_p50'].data : [];
-  const u90 = p['10u_p90'] ? p['10u_p90'].data : [];
-  const v10 = p['10v_p10'] ? p['10v_p10'].data : [];
-  const v50 = p['10v_p50'] ? p['10v_p50'].data : [];
-  const v90 = p['10v_p90'] ? p['10v_p90'].data : [];
-
-  const windP10 = u10.map((u, i) => Math.sqrt(u * u + v10[i] * v10[i]));
-  const windP50 = u50.map((u, i) => Math.sqrt(u * u + v50[i] * v50[i]));
-  const windP90 = u90.map((u, i) => Math.sqrt(u * u + v90[i] * v90[i]));
-
-  // Wind direction (meteorological: where wind comes FROM), derived from p50 u/v
-  // Use p10/p50/p90 u+v pairs to get corresponding directions; unwrap to avoid 0/360 jumps
-  const uvToDeg = (u, v) => (Math.atan2(-u, -v) * 180 / Math.PI + 360) % 360;
-  const unwrap = arr => {
-    const out = [...arr];
-    for (let i = 1; i < out.length; i++) {
-      let diff = out[i] - out[i - 1];
-      if (diff > 180)  out[i] -= 360;
-      if (diff < -180) out[i] += 360;
-    }
-    return out;
+  const col = key => (p[key] ? p[key].data : []);
+  const triple = name => ({ p10: col(`${name}_p10`), p50: col(`${name}_p50`), p90: col(`${name}_p90`) });
+  return {
+    isEnsemble: true,
+    times:   json.timestamps.map(t => new Date(t)),
+    refTime: json.reference_time ? new Date(json.reference_time) : null,
+    temp:    triple('2t'),
+    precip:  triple('tp'),
+    gust:    triple('10fg'),
+    cloud:   triple('tcc'),
   };
-  const dirP10Raw = u10.map((u, i) => uvToDeg(u, v10[i]));
-  const dirP50Raw = u50.map((u, i) => uvToDeg(u, v50[i]));
-  const dirP90Raw = u90.map((u, i) => uvToDeg(u, v90[i]));
-  const dirP10 = unwrap(dirP10Raw);
-  const dirP50 = unwrap(dirP50Raw);
-  const dirP90 = unwrap(dirP90Raw);
-
-  return { isEnsemble: true, times: timestamps, tempP10, tempP50, tempP90, rainP10, rainP50, rainP90, windP10, windP50, windP90, dirP10, dirP50, dirP90 };
 }
 
 // ── Render ensemble uncertainty charts ───────────────────────────────────────
@@ -1519,72 +1525,73 @@ function renderEnsembleCharts(data) {
   const container = document.getElementById('fc-ensemble-scroll');
   container.innerHTML = '';
 
-  const toWind = windToUnit;
+  const head = document.createElement('div');
+  head.className = 'fc-ens-head';
+  const run = modelRunText(data.refTime);
+  head.innerHTML =
+    `<h3 class="fc-section-heading">C-LAEF AlpeAdria ensemble</h3>` +
+    `<div class="fc-ens-legend">` +
+    `<span class="fc-ens-key"><span class="fc-ens-swatch-line"></span>median</span>` +
+    `<span class="fc-ens-key"><span class="fc-ens-swatch-band"></span>80% of members (10th–90th percentile)</span>` +
+    (run ? `<span class="fc-ens-key">${run}</span>` : '') +
+    `<span class="fc-ens-key fc-ens-hint">Hover or tap a chart for values</span>` +
+    `</div>`;
+  container.appendChild(head);
 
-  container.appendChild(makeEnsembleChart({
-    title: 'Temperature', yUnit: '°C',
-    times: data.times,
-    p10: data.tempP10, p50: data.tempP50, p90: data.tempP90,
-    color: '#ef9a9a', bandFill: 'rgba(239,154,154,0.2)',
-    yTickFmt: v => Math.round(v) + '°',
+  const toWind = arr => arr.map(windToUnit);
+  const grid = document.createElement('div');
+  grid.className = 'fc-chart-grid';
+  grid.appendChild(makeEnsembleChart({
+    title: 'Temperature', unit: '°C', times: data.times, ...data.temp,
+    color: '#ef9a9a', bandFill: 'rgba(239,154,154,0.38)',
+    fmt: v => `${v.toFixed(1)}°`, tickFmt: v => `${Math.round(v)}°`,
   }));
-
-  container.appendChild(makeEnsembleChart({
-    title: 'Precipitation', yUnit: 'mm',
-    times: data.times,
-    p10: data.rainP10, p50: data.rainP50, p90: data.rainP90,
-    color: '#64b5f6', bandFill: 'rgba(100,181,246,0.22)',
-    yMin0: true, yMinSpan: 1, yTickFmt: v => v.toFixed(1),
+  grid.appendChild(makeEnsembleChart({
+    title: 'Precipitation', unit: 'mm/h', times: data.times, ...data.precip,
+    color: '#64b5f6', bandFill: 'rgba(100,181,246,0.4)',
+    yMin0: true, yMinSpan: 1, fmt: v => `${v.toFixed(1)} mm`, tickFmt: v => v.toFixed(1),
   }));
-
-  container.appendChild(makeEnsembleChart({
-    title: 'Wind Speed', yUnit: windUnitLabel(),
-    times: data.times,
-    p10: data.windP10.map(toWind), p50: data.windP50.map(toWind), p90: data.windP90.map(toWind),
-    color: '#80cbc4', bandFill: null,
-    yMin0: true, yTickFmt: v => Math.round(v),
+  grid.appendChild(makeEnsembleChart({
+    title: 'Wind gusts', unit: windUnitLabel(), times: data.times,
+    p10: toWind(data.gust.p10), p50: toWind(data.gust.p50), p90: toWind(data.gust.p90),
+    color: '#ffb74d', bandFill: 'rgba(255,183,77,0.35)',
+    yMin0: true, yMinSpan: 5, fmt: v => `${Math.round(v)} ${windUnitLabel()}`, tickFmt: v => Math.round(v),
   }));
-
-  // Wind direction: use fixed 0–360 y-axis with compass labels
-  // Wrap unwrapped values back to 0–360 for display ticks
-  const compassFmt = v => {
-    const d = ((v % 360) + 360) % 360;
-    const dirs = ['N','NE','E','SE','S','SW','W','NW','N'];
-    return dirs[Math.round(d / 45) % 8];
-  };
-  container.appendChild(makeEnsembleChart({
-    title: 'Wind Direction', yUnit: '°',
-    times: data.times,
-    p10: data.dirP10, p50: data.dirP50, p90: data.dirP90,
-    color: '#ce93d8', bandFill: null,
-    yFixed: true, yLo: 0, yHi: 360,
-    yTickFmt: compassFmt,
+  grid.appendChild(makeEnsembleChart({
+    title: 'Cloud cover', unit: '%', times: data.times, ...data.cloud,
+    color: '#cfd8dc', bandFill: 'rgba(176,190,197,0.32)',
+    yMin0: true, yMax: 100, fmt: v => `${Math.round(v)}%`, tickFmt: v => Math.round(v),
   }));
+  container.appendChild(grid);
 }
 
-function makeEnsembleChart({ title, yUnit, times, p10, p50, p90, color, bandFill = null, yMin0 = false, yMinSpan = 0, yFixed = false, yLo: yLoFixed = 0, yHi: yHiFixed = 360, yTickFmt = v => v }) {
-  const W = 700, H = 155;
-  const ML = 46, MR = 50, MT = 22, MB = 38;
+/**
+ * Ensemble percentile chart: shaded 10–90 % band, median line, "now" marker
+ * and a hover/tap readout.
+ */
+function makeEnsembleChart({ title, unit, times, p10, p50, p90, color, bandFill, yMin0 = false, yMinSpan = 0, yMax = null, fmt = v => v.toFixed(1), tickFmt = v => v }) {
+  const W = 640, H = 170;
+  const ML = 40, MR = 12, MT = 22, MB = 34;
   const CW = W - ML - MR, CH = H - MT - MB;
   const n = times.length;
+  const ok = v => v !== null && isFinite(v);
 
-  let yLo, yHi;
-  if (yFixed) {
-    yLo = yLoFixed; yHi = yHiFixed;
-  } else {
-    const allVals = [...p10, ...p50, ...p90].filter(isFinite);
-    const rawMin = Math.min(...allVals);
-    const rawMax = Math.max(...allVals);
-    const span = rawMax - rawMin || 1;
-    yLo = yMin0 ? 0 : rawMin - span * 0.12;
-    yHi = rawMax + span * 0.12;
-    if (yHi - yLo < yMinSpan) yHi = yLo + yMinSpan;
-    if (yHi <= yLo) { yLo -= 1; yHi += 1; }
+  const wrapper = document.createElement('div');
+  wrapper.className = 'fc-ens-chart';
+  const allVals = [...p10, ...p50, ...p90].filter(ok);
+  if (n < 2 || !allVals.length) {
+    wrapper.textContent = `${title}: no data`;
+    return wrapper;
   }
 
-  const xOf = i => ML + (i / Math.max(n - 1, 1)) * CW;
-  const clamp = v => Math.max(yLo, Math.min(yHi, v));
-  const yOf = v => MT + CH - ((v - yLo) / (yHi - yLo)) * CH;
+  const rawMin = Math.min(...allVals), rawMax = Math.max(...allVals);
+  const span = rawMax - rawMin || 1;
+  let yLo = yMin0 ? 0 : rawMin - span * 0.12;
+  let yHi = yMax !== null ? yMax : rawMax + span * 0.12;
+  if (yHi - yLo < yMinSpan) yHi = yLo + yMinSpan;
+
+  const xOf = i => ML + (i / (n - 1)) * CW;
+  const yOf = v => MT + CH - ((Math.max(yLo, Math.min(yHi, v)) - yLo) / (yHi - yLo)) * CH;
 
   const svgNS = 'http://www.w3.org/2000/svg';
   const el = (tag, attrs, text) => {
@@ -1593,88 +1600,110 @@ function makeEnsembleChart({ title, yUnit, times, p10, p50, p90, color, bandFill
     if (text !== undefined) e.textContent = text;
     return e;
   };
+  const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, width: '100%', style: 'display:block;overflow:visible;touch-action:pan-y' });
 
-  const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, width: '100%', style: 'display:block;overflow:visible' });
-
-  // Title
   svg.appendChild(el('text', {
-    x: ML + CW / 2, y: 14, 'text-anchor': 'middle',
-    fill: '#bdbdbd', 'font-size': '11', 'font-family': 'inherit', 'font-weight': '600',
-  }, `${title} (${yUnit})`));
+    x: ML, y: 13, fill: '#e0e0e0', 'font-size': '12', 'font-family': 'inherit', 'font-weight': '600',
+  }, `${title} (${unit})`));
 
-  // Y-axis grid + ticks
   for (let i = 0; i <= 4; i++) {
     const v = yLo + (yHi - yLo) * (i / 4);
     const y = yOf(v);
-    svg.appendChild(el('line', { x1: ML, x2: ML + CW, y1: y, y2: y, stroke: 'rgba(255,255,255,0.07)', 'stroke-width': '1' }));
+    svg.appendChild(el('line', { x1: ML, x2: ML + CW, y1: y, y2: y, stroke: 'rgba(255,255,255,0.08)', 'stroke-width': '1' }));
     svg.appendChild(el('text', {
-      x: ML - 5, y: y + 3.5, 'text-anchor': 'end',
-      fill: '#7a7a7a', 'font-size': '9', 'font-family': 'inherit',
-    }, yTickFmt(v)));
+      x: ML - 6, y: y + 3.5, 'text-anchor': 'end', fill: '#9e9e9e', 'font-size': '10', 'font-family': 'inherit',
+    }, tickFmt(v)));
   }
 
-  // X-axis time marks
-  // Two-row layout: hour ticks on the first row, day labels on the second row,
-  // so a long day name (e.g. "Mon, Apr 20") never overlaps a 06/12/18 tick.
+  // X axis: hour ticks on the first row, day labels on the second row
   const tzOpt = displayTZ === 'UTC' ? 'UTC' : undefined;
-  const getH  = d => displayTZ === 'UTC' ? d.getUTCHours()   : d.getHours();
-  const getDK = d => d.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short', timeZone: tzOpt });
+  const getH  = d => displayTZ === 'UTC' ? d.getUTCHours() : d.getHours();
+  const dayKey = d => d.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short', timeZone: tzOpt });
   let lastDK = null;
   for (let i = 0; i < n; i++) {
-    const h  = getH(times[i]);
-    const dk = getDK(times[i]);
-    const x  = xOf(i);
+    const x = xOf(i);
+    const dk = dayKey(times[i]);
     if (dk !== lastDK) {
-      // Day boundary: vertical rule + day label on lower row
-      svg.appendChild(el('line', { x1: x, x2: x, y1: MT, y2: MT + CH + 5, stroke: 'rgba(255,255,255,0.22)', 'stroke-width': '1' }));
+      if (i > 0) svg.appendChild(el('line', { x1: x, x2: x, y1: MT, y2: MT + CH + 4, stroke: 'rgba(255,255,255,0.25)', 'stroke-width': '1' }));
       svg.appendChild(el('text', {
-        x: x + 3, y: MT + CH + 26,
-        fill: '#bdbdbd', 'font-size': '9', 'font-family': 'inherit', 'font-weight': '600',
+        x: x + 3, y: MT + CH + 28, fill: '#bdbdbd', 'font-size': '10', 'font-family': 'inherit', 'font-weight': '600',
       }, dk));
       lastDK = dk;
-      // Also draw the "00" hour tick on the upper row (skip only if it's the very
-      // first datapoint, where there's no room to the left)
-      if (i > 0) {
-        svg.appendChild(el('text', {
-          x, y: MT + CH + 13, 'text-anchor': 'middle',
-          fill: '#5a5a5a', 'font-size': '8', 'font-family': 'inherit',
-        }, '00'));
-      }
-    } else if (h % 6 === 0) {
-      svg.appendChild(el('line', { x1: x, x2: x, y1: MT + CH, y2: MT + CH + 4, stroke: 'rgba(255,255,255,0.12)', 'stroke-width': '1' }));
+    }
+    const h = getH(times[i]);
+    if (h % 6 === 0) {
       svg.appendChild(el('text', {
-        x, y: MT + CH + 13, 'text-anchor': 'middle',
-        fill: '#5a5a5a', 'font-size': '8', 'font-family': 'inherit',
+        x, y: MT + CH + 14, 'text-anchor': 'middle', fill: '#8a8a8a', 'font-size': '9.5', 'font-family': 'inherit',
       }, String(h).padStart(2, '0')));
     }
   }
 
-  // Helper: build SVG path string from a percentile array
-  const mkPath = arr => 'M ' + arr.map((v, i) => `${xOf(i).toFixed(1)},${yOf(isFinite(v) ? clamp(v) : yLo).toFixed(1)}`).join(' L ');
-
-  // Optional shaded band
-  if (bandFill) {
-    const bandPts = [
-      ...p10.map((v, i) => `${xOf(i).toFixed(1)},${yOf(isFinite(v) ? clamp(v) : yLo).toFixed(1)}`),
-      ...[...p90].reverse().map((v, i) => `${xOf(n - 1 - i).toFixed(1)},${yOf(isFinite(v) ? clamp(v) : yLo).toFixed(1)}`),
-    ];
-    svg.appendChild(el('path', { d: `M ${bandPts.join(' L ')} Z`, fill: bandFill, stroke: 'none' }));
+  // Band, percentile edges, median
+  const idx = times.map((_, i) => i).filter(i => ok(p10[i]) && ok(p90[i]));
+  const pts = arr => idx.map(i => `${xOf(i).toFixed(1)},${yOf(arr[i]).toFixed(1)}`);
+  if (idx.length) {
+    const hi = pts(p90), lo = pts(p10);
+    svg.appendChild(el('path', { d: `M ${hi.join(' L ')} L ${lo.reverse().join(' L ')} Z`, fill: bandFill, stroke: 'none' }));
+    for (const arr of [p10, p90]) {
+      svg.appendChild(el('path', { d: `M ${pts(arr).join(' L ')}`, fill: 'none', stroke: color, 'stroke-width': '1', 'stroke-opacity': '0.55' }));
+    }
+  }
+  const medIdx = times.map((_, i) => i).filter(i => ok(p50[i]));
+  if (medIdx.length) {
+    svg.appendChild(el('path', {
+      d: 'M ' + medIdx.map(i => `${xOf(i).toFixed(1)},${yOf(p50[i]).toFixed(1)}`).join(' L '),
+      fill: 'none', stroke: color, 'stroke-width': '2.4', 'stroke-linejoin': 'round', 'stroke-linecap': 'round',
+    }));
   }
 
-  // P10 / P90 dashed lines
-  const dashOpacity = bandFill ? '0.4' : '0.75';
-  const dashWidth   = bandFill ? '0.7' : '1.2';
-  svg.appendChild(el('path', { d: mkPath(p10), fill: 'none', stroke: color, 'stroke-width': dashWidth, 'stroke-opacity': dashOpacity, 'stroke-dasharray': '4,3' }));
-  svg.appendChild(el('path', { d: mkPath(p90), fill: 'none', stroke: color, 'stroke-width': dashWidth, 'stroke-opacity': dashOpacity, 'stroke-dasharray': '4,3' }));
+  // "Now" marker
+  const nowIdx = findNowIndex(times);
+  if (nowIdx >= 0) {
+    const frac = (Date.now() - times[nowIdx].getTime()) / (times[1] - times[0]);
+    const x = ML + ((nowIdx + Math.min(1, frac)) / (n - 1)) * CW;
+    if (x <= ML + CW) {
+      svg.appendChild(el('line', { x1: x, x2: x, y1: MT, y2: MT + CH, stroke: '#26a69a', 'stroke-width': '1.5' }));
+      svg.appendChild(el('text', { x: x + 3, y: MT + 10, fill: '#80cbc4', 'font-size': '9.5', 'font-family': 'inherit' }, 'now'));
+    }
+  }
 
-  // Median line (p50)
-  svg.appendChild(el('path', { d: mkPath(p50), fill: 'none', stroke: color, 'stroke-width': '1.8', 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
+  svg.appendChild(el('rect', { x: ML, y: MT, width: CW, height: CH, fill: 'none', stroke: 'rgba(255,255,255,0.1)', 'stroke-width': '1' }));
 
-  // Chart border
-  svg.appendChild(el('rect', { x: ML, y: MT, width: CW, height: CH, fill: 'none', stroke: 'rgba(255,255,255,0.08)', 'stroke-width': '1' }));
+  // Hover / tap readout
+  const hair = el('g', { visibility: 'hidden', 'pointer-events': 'none' });
+  const hairLine = el('line', { y1: MT, y2: MT + CH, stroke: 'rgba(255,255,255,0.5)', 'stroke-width': '1', 'stroke-dasharray': '3,2' });
+  const hairDot = el('circle', { r: '3.5', fill: color, stroke: '#fff', 'stroke-width': '1.2' });
+  const tipBg = el('rect', { rx: '4', ry: '4', fill: 'rgba(15,15,15,0.92)', stroke: 'rgba(255,255,255,0.2)', 'stroke-width': '1' });
+  const tipTxt = el('text', { fill: '#f5f5f5', 'font-size': '10.5', 'font-family': 'inherit' });
+  hair.append(hairLine, hairDot, tipBg, tipTxt);
+  svg.appendChild(hair);
 
-  const wrapper = document.createElement('div');
-  wrapper.className = 'fc-ens-chart';
+  const overlay = el('rect', { x: ML, y: MT, width: CW, height: CH, fill: 'transparent', style: 'cursor:crosshair' });
+  svg.appendChild(overlay);
+  const showAt = clientX => {
+    const r = svg.getBoundingClientRect();
+    if (!r.width) return;
+    const i = Math.max(0, Math.min(n - 1, Math.round(((clientX - r.left) * (W / r.width) - ML) / CW * (n - 1))));
+    if (!ok(p50[i])) { hair.setAttribute('visibility', 'hidden'); return; }
+    const x = xOf(i), y = yOf(p50[i]);
+    hairLine.setAttribute('x1', x); hairLine.setAttribute('x2', x);
+    hairDot.setAttribute('cx', x);  hairDot.setAttribute('cy', y);
+    const t = times[i];
+    const hh = String(getH(t)).padStart(2, '0');
+    const range = ok(p10[i]) && ok(p90[i]) ? ` (${fmt(p10[i])} – ${fmt(p90[i])})` : '';
+    tipTxt.textContent = `${dayKey(t)} ${hh}:00 · ${fmt(p50[i])}${range}`;
+    const tw = tipTxt.getComputedTextLength ? tipTxt.getComputedTextLength() : tipTxt.textContent.length * 5.6;
+    const tx = x + 10 + tw > ML + CW ? x - tw - 10 : x + 10;
+    const ty = MT + 16;
+    tipTxt.setAttribute('x', tx); tipTxt.setAttribute('y', ty);
+    tipBg.setAttribute('x', tx - 5); tipBg.setAttribute('y', ty - 12);
+    tipBg.setAttribute('width', tw + 10); tipBg.setAttribute('height', 17);
+    hair.setAttribute('visibility', 'visible');
+  };
+  overlay.addEventListener('pointermove', e => showAt(e.clientX));
+  overlay.addEventListener('pointerdown', e => showAt(e.clientX));
+  overlay.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') hair.setAttribute('visibility', 'hidden'); });
+
   wrapper.appendChild(svg);
   return wrapper;
 }
@@ -2405,27 +2434,57 @@ function renderStationData(params, station, timestamp) {
   html += '</div>';
 
   html += `<div class="fc-hist-btn-wrap">
-    <button class="fc-hist-btn" id="fc-hist-btn">Show past 24 hours</button>
+    <button class="fc-hist-btn" id="fc-hist-btn" aria-expanded="false">Show past 24 hours ▾</button>
   </div>
   <div id="fc-hist-charts-placeholder"></div>`;
 
   container.innerHTML = html;
 
   const btn = document.getElementById('fc-hist-btn');
-  btn.addEventListener('click', async () => {
-    btn.disabled = true;
-    btn.textContent = 'Loading…';
-    const histData = await fetchStationHistory(station.id);
-    if (histData) {
-      lastHistData = histData;
-      btn.closest('.fc-hist-btn-wrap').remove();
-      renderStationHistoryCharts(histData);
-    } else {
-      btn.textContent = 'No history data available';
-    }
+  btn.addEventListener('click', () => {
+    const open = btn.getAttribute('aria-expanded') === 'true';
+    histWanted = !open;
+    if (open) hideStationHistory();
+    else showStationHistory(station);
   });
 
   lastForecastData = { isStation: true, params, station, timestamp };
+
+  // Keep the history open across re-renders (unit/TZ toggles) and station clicks
+  if (histWanted) showStationHistory(station);
+}
+
+function setHistButton(state) {
+  const btn = document.getElementById('fc-hist-btn');
+  if (!btn) return;
+  btn.disabled = state === 'loading';
+  btn.setAttribute('aria-expanded', String(state === 'open'));
+  btn.textContent = {
+    closed:  'Show past 24 hours ▾',
+    loading: 'Loading…',
+    open:    'Hide past 24 hours ▴',
+    error:   'No history data available · retry',
+  }[state];
+}
+
+function hideStationHistory() {
+  document.getElementById('fc-hist-charts-placeholder').innerHTML = '';
+  setHistButton('closed');
+}
+
+async function showStationHistory(station) {
+  let histData = lastHistData?.stationId === station.id ? lastHistData : null;
+  if (!histData) {
+    setHistButton('loading');
+    histData = await fetchStationHistory(station.id);
+    // The user may have picked another station meanwhile
+    if (lastForecastData?.station !== station) return;
+    if (!histData) { setHistButton('error'); return; }
+    histData.stationId = station.id;
+    lastHistData = histData;
+  }
+  renderStationHistoryCharts(histData);
+  setHistButton('open');
 }
 
 // ── Station history charts ───────────────────────────────────────────────────
@@ -2472,9 +2531,8 @@ async function fetchStationHistory(stationId) {
 }
 
 function renderStationHistoryCharts(histData) {
-  const container = document.getElementById('fc-station-data');
-  const existing = container.querySelector('.fc-station-charts');
-  if (existing) existing.remove();
+  const container = document.getElementById('fc-hist-charts-placeholder');
+  container.innerHTML = '';
   const toWind = windToUnit;
   const windLabel = windUnitLabel();
 
@@ -2482,18 +2540,35 @@ function renderStationHistoryCharts(histData) {
   wrap.className = 'fc-station-charts';
   const histHeading = document.createElement('h3');
   histHeading.className = 'fc-section-heading';
-  histHeading.textContent = 'Last 24 hours';
+  histHeading.textContent = 'Last 24 hours · 30 min values · hover or tap for details';
   wrap.appendChild(histHeading);
-  wrap.appendChild(makeHistoryChart({ title: 'Temperature (°C)', times: histData.times, values: histData.temp, color: '#ef9a9a' }));
-  wrap.appendChild(makeHistoryChart({ title: 'Humidity (%)', times: histData.times, values: histData.humidity, color: '#64b5f6', yMin0: true, yMax: 100 }));
-  wrap.appendChild(makeHistoryChart({ title: 'Pressure (hPa)', times: histData.times, values: histData.pressure, color: '#80cbc4' }));
-  wrap.appendChild(makeHistoryChart({ title: `Wind (${windLabel})`, times: histData.times, values: histData.wind.map(toWind), color: '#ce93d8', yMin0: true }));
+  const grid = document.createElement('div');
+  grid.className = 'fc-chart-grid';
+  const series = [
+    { name: 'temperature', title: 'Temperature (°C)', values: histData.temp, color: '#ef9a9a' },
+    { name: 'humidity', title: 'Humidity (%)', values: histData.humidity, color: '#64b5f6', yMin0: true, yMax: 100 },
+    { name: 'pressure', title: 'Pressure (hPa)', values: histData.pressure, color: '#80cbc4' },
+    { name: 'wind', title: `Wind (${windLabel})`, values: histData.wind.map(toWind), color: '#ce93d8', yMin0: true },
+  ];
+  // Not every station measures everything (e.g. wind-only rooftop sites)
+  const hasData = v => v.filter(x => x !== null && isFinite(x)).length >= 2;
+  const missing = series.filter(c => !hasData(c.values)).map(c => c.name);
+  for (const c of series.filter(c => hasData(c.values))) {
+    grid.appendChild(makeHistoryChart({ times: histData.times, ...c }));
+  }
+  wrap.appendChild(grid);
+  if (missing.length) {
+    const note = document.createElement('div');
+    note.className = 'fc-hist-note';
+    note.textContent = `Not measured at this station: ${missing.join(', ')}`;
+    wrap.appendChild(note);
+  }
   container.appendChild(wrap);
 }
 
 function makeHistoryChart({ title, times, values, color, yMin0 = false, yMax = null }) {
-  const W = 700, H = 120;
-  const ML = 46, MR = 14, MT = 20, MB = 28;
+  const W = 640, H = 150;
+  const ML = 40, MR = 12, MT = 22, MB = 34;
   const CW = W - ML - MR, CH = H - MT - MB;
   const n = times.length;
 
@@ -2521,12 +2596,12 @@ function makeHistoryChart({ title, times, values, color, yMin0 = false, yMax = n
     return e;
   };
 
-  const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, width: '100%', style: 'display:block;overflow:visible' });
+  const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, width: '100%', style: 'display:block;overflow:visible;touch-action:pan-y' });
 
   // Title
   svg.appendChild(el('text', {
-    x: ML + CW / 2, y: 12, 'text-anchor': 'middle',
-    fill: '#9e9e9e', 'font-size': '10', 'font-family': 'inherit', 'font-weight': '600',
+    x: ML, y: 13,
+    fill: '#e0e0e0', 'font-size': '12', 'font-family': 'inherit', 'font-weight': '600',
   }, title));
 
   // Y-axis grid + ticks
@@ -2536,8 +2611,8 @@ function makeHistoryChart({ title, times, values, color, yMin0 = false, yMax = n
     svg.appendChild(el('line', { x1: ML, x2: ML + CW, y1: y, y2: y, stroke: 'rgba(255,255,255,0.07)', 'stroke-width': '1' }));
     const lbl = Math.abs(v) < 10 ? v.toFixed(1) : String(Math.round(v));
     svg.appendChild(el('text', {
-      x: ML - 5, y: y + 3.5, 'text-anchor': 'end',
-      fill: '#7a7a7a', 'font-size': '9', 'font-family': 'inherit',
+      x: ML - 6, y: y + 3.5, 'text-anchor': 'end',
+      fill: '#9e9e9e', 'font-size': '10', 'font-family': 'inherit',
     }, lbl));
   }
 
@@ -2550,18 +2625,20 @@ function makeHistoryChart({ title, times, values, color, yMin0 = false, yMax = n
     const m = displayTZ === 'UTC' ? times[i].getUTCMinutes() : times[i].getMinutes();
     const dk = times[i].toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short', timeZone: tzOpt });
     const x = xOf(i);
+    // Day labels on a second row so they never collide with the hour ticks
     if (dk !== prevDK) {
-      svg.appendChild(el('line', { x1: x, x2: x, y1: MT, y2: MT + CH + 5, stroke: 'rgba(255,255,255,0.18)', 'stroke-width': '1' }));
+      if (i > 0) svg.appendChild(el('line', { x1: x, x2: x, y1: MT, y2: MT + CH + 4, stroke: 'rgba(255,255,255,0.25)', 'stroke-width': '1' }));
       svg.appendChild(el('text', {
-        x: x + 3, y: MT + CH + 18,
-        fill: '#bdbdbd', 'font-size': '8.5', 'font-family': 'inherit', 'font-weight': '600',
+        x: x + 3, y: MT + CH + 28,
+        fill: '#bdbdbd', 'font-size': '10', 'font-family': 'inherit', 'font-weight': '600',
       }, dk));
       prevDK = dk;
-    } else if (m === 0 && h % 6 === 0) {
-      svg.appendChild(el('line', { x1: x, x2: x, y1: MT + CH, y2: MT + CH + 4, stroke: 'rgba(255,255,255,0.1)', 'stroke-width': '1' }));
+    }
+    if (m === 0 && h % 6 === 0) {
+      svg.appendChild(el('line', { x1: x, x2: x, y1: MT + CH, y2: MT + CH + 4, stroke: 'rgba(255,255,255,0.15)', 'stroke-width': '1' }));
       svg.appendChild(el('text', {
-        x, y: MT + CH + 15, 'text-anchor': 'middle',
-        fill: '#5a5a5a', 'font-size': '8', 'font-family': 'inherit',
+        x, y: MT + CH + 14, 'text-anchor': 'middle',
+        fill: '#8a8a8a', 'font-size': '9.5', 'font-family': 'inherit',
       }, String(h).padStart(2, '0')));
     }
   }
@@ -2580,7 +2657,7 @@ function makeHistoryChart({ title, times, values, color, yMin0 = false, yMax = n
   if (pathD) {
     svg.appendChild(el('path', {
       d: pathD, fill: 'none', stroke: color,
-      'stroke-width': '1.8', 'stroke-linejoin': 'round', 'stroke-linecap': 'round',
+      'stroke-width': '2.2', 'stroke-linejoin': 'round', 'stroke-linecap': 'round',
     }));
   }
 
@@ -2592,7 +2669,7 @@ function makeHistoryChart({ title, times, values, color, yMin0 = false, yMax = n
   const hairLine = el('line', { x1: 0, x2: 0, y1: MT, y2: MT + CH, stroke: 'rgba(255,255,255,0.45)', 'stroke-width': '1', 'stroke-dasharray': '3,2' });
   const hairDot  = el('circle', { cx: 0, cy: 0, r: '3.5', fill: color, stroke: 'rgba(255,255,255,0.8)', 'stroke-width': '1.5' });
   const hairBg   = el('rect', { rx: '3', ry: '3', fill: 'rgba(20,20,20,0.88)', stroke: 'rgba(255,255,255,0.18)', 'stroke-width': '1' });
-  const hairTxt  = el('text', { 'font-size': '9.5', 'font-family': 'inherit', fill: '#f0f0f0' });
+  const hairTxt  = el('text', { 'font-size': '10.5', 'font-family': 'inherit', fill: '#f0f0f0' });
   hairG.appendChild(hairLine);
   hairG.appendChild(hairDot);
   hairG.appendChild(hairBg);
@@ -2603,7 +2680,7 @@ function makeHistoryChart({ title, times, values, color, yMin0 = false, yMax = n
   const overlay = el('rect', { x: ML, y: MT, width: CW, height: CH, fill: 'transparent', style: 'cursor:crosshair' });
   svg.appendChild(overlay);
 
-  overlay.addEventListener('mousemove', (e) => {
+  const showAt = (e) => {
     const svgRect = svg.getBoundingClientRect();
     if (!svgRect.width) return;
     const svgX = (e.clientX - svgRect.left) * (W / svgRect.width);
@@ -2623,16 +2700,18 @@ function makeHistoryChart({ title, times, values, color, yMin0 = false, yMax = n
     const valStr = v.toFixed(1);
     const label  = `${valStr} ${unit}, ${dayFmt}, ${hh}:${mm}`;
     hairTxt.textContent = label;
-    const approxW = label.length * 5.4 + 10;
-    const approxH = 14;
+    const approxW = label.length * 5.9 + 10;
+    const approxH = 16;
     const ttX = (px + 8 + approxW > ML + CW) ? px - approxW - 6 : px + 8;
     const ttY = Math.max(MT + 4, py - 10);
-    hairBg.setAttribute('x', ttX - 3);      hairBg.setAttribute('y', ttY - 11);
+    hairBg.setAttribute('x', ttX - 3);      hairBg.setAttribute('y', ttY - 12);
     hairBg.setAttribute('width', approxW);  hairBg.setAttribute('height', approxH);
     hairTxt.setAttribute('x', ttX);         hairTxt.setAttribute('y', ttY - 1);
     hairG.setAttribute('visibility', 'visible');
-  });
-  overlay.addEventListener('mouseleave', () => { hairG.setAttribute('visibility', 'hidden'); });
+  };
+  overlay.addEventListener('pointermove', showAt);
+  overlay.addEventListener('pointerdown', showAt);
+  overlay.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') hairG.setAttribute('visibility', 'hidden'); });
 
   wrapper.appendChild(svg);
   return wrapper;

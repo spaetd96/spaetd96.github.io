@@ -11,10 +11,15 @@ const PAST_PERIODS = [
   { days: 90,  label: '90 days' },
   { days: 365, label: '1 year' },
 ];
+const REF_PERIODS = [
+  { key: '1991_2020', label: '1991–2020' },
+  { key: '1961_1990', label: '1961–1990' },
+];
 const CLIMATE_WINDOW_DAYS = 7;   // ± days around the date pooled into the normal
 const MONTH_CUMDAYS = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
 
 let pastPeriodDays = 30;
+let pastRefPeriod = loadPref('fc.refPeriod', REF_PERIODS.map(r => r.key)) || REF_PERIODS[0].key;
 let pastRequestId = 0;
 const climateCache = new Map();  // rounded lat/lon → Promise<normals | null>
 
@@ -73,7 +78,9 @@ async function fetchAndShowPast(lat, lng) {
   const end = new Date();
   const start = new Date(end);
   start.setUTCDate(start.getUTCDate() - period.days);
-  const raw = await fetchSpartacus(lat, lng, 'TN,TX,RR,SA,TM24a_1991_2020', isoDate(start), isoDate(end));
+  // Both reference periods are fetched so switching between them needs no new request
+  const anomParams = REF_PERIODS.map(r => `TM24a_${r.key}`).join(',');
+  const raw = await fetchSpartacus(lat, lng, `TN,TX,RR,SA,${anomParams}`, isoDate(start), isoDate(end));
   if (reqId !== pastRequestId || !MODELS[currentModel].isHistorical) return;
 
   const col = key => raw.p[key]?.data || [];
@@ -82,7 +89,7 @@ async function fetchAndShowPast(lat, lng) {
     times: raw.times,
     tn: col('TN'), tx: col('TX'), rr: col('RR'),
     sun: col('SA').map(v => (v === null ? null : v / 3600)),
-    anom: col('TM24a_1991_2020'),
+    anom: Object.fromEntries(REF_PERIODS.map(r => [r.key, col(`TM24a_${r.key}`)])),
     gridLat: raw.gridLat, gridLon: raw.gridLon,
   };
   if (!data.tx.some(v => v !== null && isFinite(v))) {
@@ -102,24 +109,45 @@ function renderPast(data) {
   el.innerHTML = '';
   el.classList.remove('hidden');
 
-  // Period picker
-  const picker = document.createElement('div');
-  picker.className = 'fc-past-periods';
-  for (const p of PAST_PERIODS) {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'fc-chip' + (p.days === pastPeriodDays ? ' active' : '');
-    btn.textContent = p.label;
-    btn.addEventListener('click', () => {
-      if (p.days === pastPeriodDays) return;
-      pastPeriodDays = p.days;
-      fetchAndShowForecast(data.lat, data.lng);
-    });
-    picker.appendChild(btn);
-  }
-  el.appendChild(picker);
+  // Period and reference-period pickers
+  const controls = document.createElement('div');
+  controls.className = 'fc-past-controls';
+  const chipGroup = (label, items, isActive, onPick) => {
+    const group = document.createElement('div');
+    group.className = 'fc-past-periods';
+    group.setAttribute('role', 'group');
+    group.setAttribute('aria-label', label);
+    const lbl = document.createElement('span');
+    lbl.className = 'fc-past-group-label';
+    lbl.textContent = label;
+    group.appendChild(lbl);
+    for (const item of items) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      const active = isActive(item);
+      btn.className = 'fc-chip' + (active ? ' active' : '');
+      btn.setAttribute('aria-pressed', String(active));
+      btn.textContent = item.label;
+      btn.addEventListener('click', () => { if (!isActive(item)) onPick(item); });
+      group.appendChild(btn);
+    }
+    return group;
+  };
+  controls.appendChild(chipGroup('Period', PAST_PERIODS, p => p.days === pastPeriodDays, p => {
+    pastPeriodDays = p.days;
+    fetchAndShowForecast(data.lat, data.lng);
+  }));
+  controls.appendChild(chipGroup('Compare with', REF_PERIODS, r => r.key === pastRefPeriod, r => {
+    pastRefPeriod = r.key;
+    savePref('fc.refPeriod', r.key);
+    renderPast(data);
+  }));
+  el.appendChild(controls);
 
-  el.appendChild(buildPastSummary(data));
+  const ref = REF_PERIODS.find(r => r.key === pastRefPeriod) || REF_PERIODS[0];
+  const anom = data.anom[ref.key] || [];
+
+  el.appendChild(buildPastSummary(data, anom, ref.label));
 
   const charts = document.createElement('div');
   charts.className = 'fc-past-charts';
@@ -129,8 +157,8 @@ function renderPast(data) {
     tickFmt: v => Math.round(v) + '°',
   }));
   charts.appendChild(makeDailyChart({
-    title: 'Daily mean temperature vs 1991–2020', unit: '°C', times: data.times,
-    bars: { values: data.anom, color: v => (v >= 0 ? 'rgba(239,83,80,0.75)' : 'rgba(66,165,245,0.75)') },
+    title: `Daily mean temperature vs ${ref.label}`, unit: '°C', times: data.times,
+    bars: { values: anom, color: v => (v >= 0 ? 'rgba(239,83,80,0.75)' : 'rgba(66,165,245,0.75)') },
     symmetric: true,
     tickFmt: v => (v > 0 ? '+' : '') + v.toFixed(0) + '°',
   }));
@@ -155,7 +183,7 @@ function renderPast(data) {
   el.appendChild(credit);
 }
 
-function buildPastSummary(data) {
+function buildPastSummary(data, anomValues, refLabel) {
   const finite = arr => arr.filter(v => v !== null && isFinite(v));
   const fmtDate = d => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
   const argExt = (arr, cmp) => {
@@ -167,13 +195,13 @@ function buildPastSummary(data) {
   };
 
   const cards = [];
-  const anom = finite(data.anom);
+  const anom = finite(anomValues);
   if (anom.length) {
     const mean = anom.reduce((a, b) => a + b, 0) / anom.length;
     cards.push({
       icon: mean >= 0 ? '🔺' : '🔻',
       val: `${mean >= 0 ? '+' : '−'}${Math.abs(mean).toFixed(1)} °C`,
-      label: 'vs 1991–2020',
+      label: `vs ${refLabel}`,
       color: mean >= 0 ? 'rgba(239,83,80,0.35)' : 'rgba(66,165,245,0.35)',
     });
   }
@@ -215,8 +243,8 @@ function buildPastSummary(data) {
  * Styled like the ensemble/history charts in forecasts.js.
  */
 function makeDailyChart({ title, unit, times, band = null, bars = null, yMin0 = false, yMinSpan = 0, symmetric = false, tickFmt = v => v }) {
-  const W = 700, H = 140;
-  const ML = 46, MR = 14, MT = 22, MB = 28;
+  const W = 640, H = 150;
+  const ML = 40, MR = 12, MT = 22, MB = 28;
   const CW = W - ML - MR, CH = H - MT - MB;
   const n = times.length;
 
@@ -224,11 +252,13 @@ function makeDailyChart({ title, unit, times, band = null, bars = null, yMin0 = 
   let lo = vals.length ? Math.min(...vals) : 0;
   let hi = vals.length ? Math.max(...vals) : 1;
   if (symmetric) {
-    const m = Math.max(Math.abs(lo), Math.abs(hi), 1);
+    // Round to an even number so the ±half ticks are whole degrees
+    const m = Math.ceil(Math.max(Math.abs(lo), Math.abs(hi), 1) / 2) * 2;
     lo = -m; hi = m;
   } else if (yMin0) {
     lo = 0;
-    hi = Math.max(hi, lo + yMinSpan);
+    // Top at a multiple of 4 so the four grid steps fall on whole numbers
+    hi = Math.ceil(Math.max(hi, yMinSpan) / 4) * 4;
   } else {
     const pad = (hi - lo || 1) * 0.1;
     lo -= pad; hi += pad;
@@ -248,8 +278,7 @@ function makeDailyChart({ title, unit, times, band = null, bars = null, yMin0 = 
   const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, width: '100%', style: 'display:block;overflow:visible' });
 
   svg.appendChild(el('text', {
-    x: ML + CW / 2, y: 14, 'text-anchor': 'middle',
-    fill: '#bdbdbd', 'font-size': '11', 'font-family': 'inherit', 'font-weight': '600',
+    x: ML, y: 13, fill: '#e0e0e0', 'font-size': '12', 'font-family': 'inherit', 'font-weight': '600',
   }, `${title} (${unit})`));
 
   for (let i = 0; i <= 4; i++) {
@@ -257,7 +286,7 @@ function makeDailyChart({ title, unit, times, band = null, bars = null, yMin0 = 
     const y = yOf(v);
     svg.appendChild(el('line', { x1: ML, x2: ML + CW, y1: y, y2: y, stroke: 'rgba(255,255,255,0.07)', 'stroke-width': '1' }));
     svg.appendChild(el('text', {
-      x: ML - 5, y: y + 3.5, 'text-anchor': 'end', fill: '#7a7a7a', 'font-size': '9', 'font-family': 'inherit',
+      x: ML - 6, y: y + 3.5, 'text-anchor': 'end', fill: '#9e9e9e', 'font-size': '10', 'font-family': 'inherit',
     }, tickFmt(v)));
   }
 
@@ -277,7 +306,7 @@ function makeDailyChart({ title, unit, times, band = null, bars = null, yMin0 = 
     const x = xOf(i);
     svg.appendChild(el('line', { x1: x, x2: x, y1: MT + CH, y2: MT + CH + 4, stroke: 'rgba(255,255,255,0.2)', 'stroke-width': '1' }));
     svg.appendChild(el('text', {
-      x, y: MT + CH + 15, 'text-anchor': 'middle', fill: '#9e9e9e', 'font-size': '9', 'font-family': 'inherit',
+      x, y: MT + CH + 16, 'text-anchor': 'middle', fill: '#9e9e9e', 'font-size': '10', 'font-family': 'inherit',
     }, text));
   }
 
