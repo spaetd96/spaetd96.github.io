@@ -32,10 +32,10 @@ const MODELS = {
     ],
     creditHtml: '<a href="https://www.meteoswiss.admin.ch/weather/warning-and-forecasting-systems/icon-forecasting-systems.html" target="_blank" rel="noopener">MeteoSwiss ICON-CH1/CH2</a> via <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a>',
   },
-  arome: {
+  claef: {
     resource: 'nwp-v2-1h-1km',
     label:    'C-LAEF AlpeAdria',
-    desc:     'Short-range weather forecast · hourly steps up to 60 h · 1 km grid · temperature, rain, snow, wind, clouds',
+    desc:     'C-LAEF AlpeAdria control run · hourly steps up to 60 h · 1 km grid · new run every 3 h · temperature, rain, snow, wind, clouds',
     params:   '2t,rain,sf,10u,10v,tcc,10fg',
     dataUrl:  'https://data.hub.geosphere.at/dataset/nwp-v2-1h-1km',
     doi:      null,
@@ -73,7 +73,7 @@ const MODELS = {
   ensemble: {
     resource: 'ensemble-v2-1h-1km',
     label:    'Ensemble',
-    desc:     'Probabilistic forecast showing uncertainty \u00b7 hourly steps up to 60 h \u00b7 range of likely outcomes',
+    desc:     'C-LAEF AlpeAdria ensemble \u00b7 probabilistic forecast showing uncertainty \u00b7 hourly steps up to 60 h \u00b7 range of likely outcomes',
     params:   '2t_p10,2t_p50,2t_p90,tp_p10,tp_p50,tp_p90,10fg_p10,10fg_p50,10fg_p90,tcc_p10,tcc_p50,tcc_p90,10u_p10,10u_p50,10u_p90,10v_p10,10v_p50,10v_p90',
     dataUrl:  'https://data.hub.geosphere.at/dataset/ensemble-v2-1h-1km',
     doi:      null,
@@ -127,7 +127,7 @@ const MODELS = {
 // Tabs in the info box; each tab offers its models as chips
 const MODEL_GROUPS = {
   now:      ['stations', 'inca'],
-  forecast: ['ifs', 'icon_ch', 'arome', 'compare'],
+  forecast: ['ifs', 'icon_ch', 'claef', 'compare'],
   past:     ['spartacus', 'spartacus_m', 'snowgrid'],
 };
 const SELECTABLE_MODELS = Object.values(MODEL_GROUPS).flat();
@@ -466,7 +466,8 @@ function selectLocation(lat, lng, { label = null } = {}) {
 function readHash() {
   const out = { model: null, latLng: null, zoom: null };
   const params = new URLSearchParams(location.hash.slice(1));
-  const m = params.get('m');
+  let m = params.get('m');
+  if (m === 'arome') m = 'claef';  // old permalinks
   if (SELECTABLE_MODELS.includes(m)) out.model = m;
   const ll = (params.get('ll') || '').split(',').map(Number);
   if (ll.length === 2 && ll.every(Number.isFinite) && L.latLngBounds(MAP_BOUNDS).contains(ll)) {
@@ -809,7 +810,7 @@ async function fetchAndShowForecast(lat, lng) {
     if (!m.isEnsemble && currentModel !== 'inca') addClimateContext(lat, lng, lastForecastData);
 
     // Show ensemble button only for C-LAEF AlpeAdria
-    if (currentModel === 'arome') {
+    if (currentModel === 'claef') {
       ensembleBtnWrap.classList.remove('hidden');
       updateEnsembleButton('closed');
       if (ensembleWanted) showEnsemble(lat, lng);
@@ -873,7 +874,7 @@ async function showEnsemble(lat, lng) {
       return;
     }
   }
-  if (req !== ensembleReq || currentModel !== 'arome') return;
+  if (req !== ensembleReq || currentModel !== 'claef') return;
 
   document.getElementById('fc-forecast-panel').classList.add('fc-panel-ensemble');
   document.getElementById('fc-ensemble-scroll').classList.remove('hidden');
@@ -941,16 +942,16 @@ async function fetchCompareData(lat, lng) {
     `&hourly=${omParams}&forecast_days=5&wind_speed_unit=ms&timezone=UTC`;
 
   // C-LAEF AlpeAdria (GeoSphere direct) — include snow so the compare table includes its snow row
-  const aromeUrl = `${API_BASE}/timeseries/forecast/${MODELS.arome.resource}` +
-    `?lat_lon=${lat.toFixed(4)},${lng.toFixed(4)}&parameters=${MODELS.arome.params}`;
+  const claefUrl = `${API_BASE}/timeseries/forecast/${MODELS.claef.resource}` +
+    `?lat_lon=${lat.toFixed(4)},${lng.toFixed(4)}&parameters=${MODELS.claef.params}`;
 
   const results = [];
 
   // Fetch all in parallel (ICON-CH is itself a parallel fetch internally)
-  const [ifsJson, iconChData, aromeJson] = await Promise.allSettled([
+  const [ifsJson, iconChData, claefJson] = await Promise.allSettled([
     fetchJSON(ifsUrl),
     fetchMergedIconCH(lat, lng),
-    fetchJSON(aromeUrl),
+    fetchJSON(claefUrl),
   ]);
 
   // Process IFS
@@ -972,19 +973,19 @@ async function fetchCompareData(lat, lng) {
   }
 
   // Process C-LAEF AlpeAdria
-  if (aromeJson.status === 'fulfilled') {
-    // Temporarily set currentModel to arome for processTimeseries
+  if (claefJson.status === 'fulfilled') {
+    // Temporarily set currentModel to claef for processTimeseries
     const savedModel = currentModel;
-    currentModel = 'arome';
+    currentModel = 'claef';
     try {
-      const data = processTimeseries(aromeJson.value);
+      const data = processTimeseries(claefJson.value);
       data.isEnsemble = false;
       results.push({ label: 'C-LAEF AlpeAdria', data, hasCloudCover: true, gridLat: data.gridLat, gridLon: data.gridLon });
     } finally {
       currentModel = savedModel;
     }
   } else {
-    results.push({ label: 'C-LAEF AlpeAdria', error: aromeJson.reason?.message || 'Failed to load' });
+    results.push({ label: 'C-LAEF AlpeAdria', error: claefJson.reason?.message || 'Failed to load' });
   }
 
   // Remap all datasets to a shared unified time axis so columns align perfectly
