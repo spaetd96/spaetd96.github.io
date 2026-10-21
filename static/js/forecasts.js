@@ -2574,7 +2574,9 @@ async function fetchStationHistory(stationId) {
   if (stationId == null) return null;
   const now = new Date();
   const end = now.toISOString().substring(0, 16);
-  const start = new Date(now - 48 * 3600 * 1000).toISOString().substring(0, 16);
+  // Begin 50 min before a full hour so the first hourly precipitation bin is
+  // complete (it covers the 10 min values stamped :10 … :00 of the next hour).
+  const start = new Date(Math.floor((now - 48 * 3600 * 1000) / 3600000) * 3600000 - 50 * 60000).toISOString().substring(0, 16);
   const url = `${API_BASE}/station/historical/${HIST_RESOURCE}?parameters=${HIST_PARAMS}&station_ids=${stationId}&start=${start}&end=${end}`;
   try {
     const json = await fetchJSON(url);
