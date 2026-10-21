@@ -1,0 +1,5 @@
+{{/* Let the full-screen forecasts page extend under the iOS status bar and
+     home indicator; its CSS offsets the controls with env(safe-area-inset-*) */}}
+{{ if eq .Type "forecasts" }}
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+{{ end }}

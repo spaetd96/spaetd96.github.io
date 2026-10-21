@@ -682,7 +682,12 @@ html, body {
 /* ── Responsive ─────────────────────────────────────────────────────────── */
 
 @media (max-width: 640px) {
-  #fc-outer { height: 100svh; }
+  /* Fill the whole screen, including the area behind the browser's toolbars */
+  #fc-outer {
+    position: fixed;
+    inset: 0;
+    height: 100dvh;
+  }
   #fc-forecast-panel.fc-panel-collapsed #fc-panel-body,
   #fc-forecast-panel.fc-panel-collapsed #fc-forecast-loading,
   #fc-forecast-panel.fc-panel-collapsed #fc-nearest-station {
@@ -700,10 +705,15 @@ html, body {
   /* Search: full-width bar at the top. Above the info box so results overlap it */
   #fc-search-box {
     width: auto;
-    top: 8px;
+    top: calc(env(safe-area-inset-top, 0px) + 8px);
     left: 8px;
     right: 8px;
     z-index: 1002;
+  }
+  #fc-search-input,
+  #fc-locate-btn {
+    background: rgba(18, 18, 18, 0.96);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
   }
   #fc-search-input {
     min-height: 44px;
@@ -720,7 +730,7 @@ html, body {
   /* Info box: full-width strip of tabs and chips below the search bar;
      the description and credits open with the (i) button */
   #fc-info-box {
-    top: 60px;
+    top: calc(env(safe-area-inset-top, 0px) + 60px);
     left: 8px;
     right: 8px;
     max-width: none;
@@ -758,15 +768,12 @@ html, body {
     font-size: 0.8rem;
     border-radius: 18px;
   }
-  #fc-outer {
-    height: 100svh;
-  }
   #fc-map {
     flex: 1;
     max-height: none;
   }
   #fc-click-hint {
-    bottom: 80px;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 80px);
     top: auto;
     left: 50%;
     transform: translateX(-50%);
@@ -778,6 +785,8 @@ html, body {
   }
   #fc-forecast-panel {
     max-height: 65vh;
+    /* Keep the content clear of the home indicator */
+    padding-bottom: env(safe-area-inset-bottom, 0px);
   }
   #fc-forecast-panel.fc-panel-ensemble {
     max-height: 85vh;
