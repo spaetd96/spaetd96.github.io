@@ -74,7 +74,7 @@ const MODELS = {
     resource: 'ensemble-v2-1h-1km',
     label:    'Ensemble',
     desc:     'Probabilistic forecast showing uncertainty \u00b7 hourly steps up to 60 h \u00b7 range of likely outcomes',
-    params:   '2t_p10,2t_p50,2t_p90,tp_p10,tp_p50,tp_p90,10fg_p10,10fg_p50,10fg_p90,tcc_p10,tcc_p50,tcc_p90,10u_p50,10v_p50',
+    params:   '2t_p10,2t_p50,2t_p90,tp_p10,tp_p50,tp_p90,10fg_p10,10fg_p50,10fg_p90,tcc_p10,tcc_p50,tcc_p90,10u_p10,10u_p50,10u_p90,10v_p10,10v_p50,10v_p90',
     dataUrl:  'https://data.hub.geosphere.at/dataset/ensemble-v2-1h-1km',
     doi:      null,
     doiUrl:   null,
@@ -1540,13 +1540,30 @@ function processEnsembleTimeseries(json) {
     precip:  triple('tp'),
     gust:    triple('10fg'),
     cloud:   triple('tcc'),
-    // Percentiles of u and v cannot be combined into percentiles of speed, so
-    // only the speed implied by the median components is available.
-    wind50:  col('10u_p50').map((u, i) => {
-      const v = col('10v_p50')[i];
-      return u === null || v === null || v === undefined ? null : Math.hypot(u, v);
-    }),
+    wind:    windSpeedRange(triple('10u'), triple('10v')),
   };
+}
+
+/**
+ * Wind speed from the u/v component percentiles. Speed percentiles are not
+ * published, so the median is the speed of the median components and the
+ * range spans the slowest and fastest speeds within the 10th–90th percentile
+ * box of u and v. This is an approximation, usually wider than the true
+ * 10th–90th percentile of speed.
+ */
+function windSpeedRange(u, v) {
+  const ok = x => x !== null && x !== undefined && isFinite(x);
+  const clamp0 = (lo, hi) => Math.max(lo, Math.min(hi, 0));
+  const out = { p10: [], p50: [], p90: [] };
+  for (let i = 0; i < u.p50.length; i++) {
+    const vals = [u.p10[i], u.p50[i], u.p90[i], v.p10[i], v.p50[i], v.p90[i]];
+    if (!vals.every(ok)) { out.p10.push(null); out.p50.push(null); out.p90.push(null); continue; }
+    const [ulo, umid, uhi, vlo, vmid, vhi] = vals;
+    out.p50.push(Math.hypot(umid, vmid));
+    out.p10.push(Math.hypot(clamp0(ulo, uhi), clamp0(vlo, vhi)));
+    out.p90.push(Math.max(Math.hypot(ulo, vlo), Math.hypot(ulo, vhi), Math.hypot(uhi, vlo), Math.hypot(uhi, vhi)));
+  }
+  return out;
 }
 
 // ── Render ensemble uncertainty charts ───────────────────────────────────────
@@ -1583,7 +1600,7 @@ function renderEnsembleCharts(data) {
   }));
   grid.appendChild(makeEnsembleChart({
     title: 'Wind speed', unit: windUnitLabel(), times: data.times,
-    p10: data.wind50.map(() => null), p50: toWind(data.wind50), p90: data.wind50.map(() => null),
+    p10: toWind(data.wind.p10), p50: toWind(data.wind.p50), p90: toWind(data.wind.p90),
     color: '#ce93d8', bandFill: 'rgba(206,147,216,0.35)',
     yMin0: true, yMinSpan: 5, fmt: v => `${Math.round(v)} ${windUnitLabel()}`, tickFmt: v => Math.round(v),
   }));
@@ -1611,7 +1628,8 @@ function renderEnsembleCharts(data) {
   note.textContent = 'Accumulated precipitation: bars sum the hourly median since the start of the run, ' +
     'error bars sum the hourly 10th and 90th percentiles. Only hourly percentiles are published, ' +
     'so the error bars overstate the spread of the true accumulated total. ' +
-    'Wind speed is derived from the median wind components, so it has no percentile range.';
+    'Wind speed percentiles are not published either: the median is the speed of the median wind components, ' +
+    'and the shaded range is approximated from the 10th–90th percentile wind components.';
   container.appendChild(note);
 }
 
@@ -2496,7 +2514,7 @@ function renderStationData(params, station, timestamp) {
     </div>`;
   }
 
-  if (rain !== null && rain > 0) {
+  if (rain !== null) {
     html += `<div class="fc-station-param">
       <span class="fc-sp-icon">\u{1F327}\uFE0F</span>
       <span class="fc-sp-val">${rain.toFixed(1)} mm</span>
@@ -2653,7 +2671,7 @@ function renderStationHistoryCharts(histData) {
   series.push(
     { name: 'precipitation', title: 'Precipitation (mm/h)', values: histData.rainHourly, times: histData.rainTimes,
       color: '#64b5f6', yMin0: true, bars: true, dec: 2 },
-    { name: 'accumulated precipitation', title: 'Accumulated precipitation (mm)', values: histData.rainAccum, times: histData.rainTimes,
+    { name: 'accumulated precipitation', title: `Accumulated precipitation (mm) · total ${(histData.rainAccum.at(-1) ?? 0).toFixed(1)} mm`, values: histData.rainAccum, times: histData.rainTimes,
       color: '#4fc3f7', yMin0: true, bars: true, dec: 2 },
   );
   const hasData = v => v.filter(x => x !== null && isFinite(x)).length >= 2;
@@ -2688,6 +2706,7 @@ function makeHistoryChart({ title, times, values, color, yMin0 = false, yMax = n
   let yLo = yMin0 ? 0 : rawMin - span * 0.1;
   let yHi = yMax !== null ? yMax : rawMax + span * 0.1;
   if (yHi <= yLo) { yLo -= 1; yHi += 1; }
+  if (bars && yHi < 1) yHi = 1;  // keep readable ticks for dry periods
 
   // Bars sit centred in one slot per value; lines run edge to edge
   const step = bars ? CW / n : CW / Math.max(n - 1, 1);
@@ -2752,6 +2771,12 @@ function makeHistoryChart({ title, times, values, color, yMin0 = false, yMax = n
     }
   }
 
+  if (bars && !valid.some(v => v > 0)) {
+    svg.appendChild(el('text', {
+      x: ML + CW / 2, y: MT + CH / 2 + 4, 'text-anchor': 'middle',
+      fill: '#9e9e9e', 'font-size': '11', 'font-family': 'inherit',
+    }, 'No precipitation in this period'));
+  }
   if (bars) {
     const bw = step * 0.78;
     for (let i = 0; i < n; i++) {
