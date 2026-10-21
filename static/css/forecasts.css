@@ -2,6 +2,17 @@
 
 .page-header { display: none !important; }
 footer        { display: none !important; }
+.page-footer  { display: none !important; }
+
+/* The theme's .page-body has my-10 margins, which made the page 80px taller
+   than the viewport. The page itself never scrolls; only #fc-panel-body and
+   the panels' tables and lists do */
+.page-body { margin: 0 !important; }
+html, body {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
 
 /* ── Outer wrapper ──────────────────────────────────────────────────────── */
 
@@ -513,6 +524,7 @@ footer        { display: none !important; }
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain; /* don't hand leftover scroll to the page */
   display: flex;
   flex-direction: column;
   scrollbar-width: thin;

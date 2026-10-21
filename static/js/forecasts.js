@@ -387,10 +387,9 @@ function setInfoOpen(open) {
 
 function defaultHintText() {
   const m = MODELS[currentModel];
-  const verb = touchQuery.matches ? 'Tap' : 'Click';
-  if (m.isStation) return `${verb} on a station to see current measurements`;
-  if (m.isHistorical) return `${verb} anywhere in Austria to see past weather and climate`;
-  return `${verb} anywhere on the map to see a weather forecast`;
+  if (m.isStation) return 'Tap on a station to see current measurements';
+  if (m.isHistorical) return 'Tap anywhere in Austria to see past weather and climate';
+  return 'Tap anywhere on the map to see a weather forecast';
 }
 
 /** Briefly show a message in the hint bubble, then restore the default hint. */
@@ -605,7 +604,6 @@ function onMapClick(e) {
 // ── Mobile layout ────────────────────────────────────────────────────────────
 
 const mobileQuery = window.matchMedia('(max-width: 640px)');
-const touchQuery = window.matchMedia('(pointer: coarse)');
 
 /**
  * On phones, the band of the map (container y range) that stays visible
