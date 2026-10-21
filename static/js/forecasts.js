@@ -1571,15 +1571,21 @@ function renderEnsembleCharts(data) {
     fmt: v => `${v.toFixed(1)}°`, tickFmt: v => `${Math.round(v)}°`,
   }));
   grid.appendChild(makeEnsembleChart({
+    title: 'Wind gusts', unit: windUnitLabel(), times: data.times,
+    p10: toWind(data.gust.p10), p50: toWind(data.gust.p50), p90: toWind(data.gust.p90),
+    color: '#ffb74d', bandFill: 'rgba(255,183,77,0.35)',
+    yMin0: true, yMinSpan: 5, fmt: v => `${Math.round(v)} ${windUnitLabel()}`, tickFmt: v => Math.round(v),
+  }));
+  grid.appendChild(makeEnsembleChart({
     title: 'Precipitation', unit: 'mm/h', times: data.times, ...data.precip,
     color: '#64b5f6', bandFill: 'rgba(100,181,246,0.4)',
     yMin0: true, yMinSpan: 1, fmt: v => `${v.toFixed(1)} mm`, tickFmt: v => v.toFixed(1),
   }));
   grid.appendChild(makeEnsembleChart({
-    title: 'Wind gusts', unit: windUnitLabel(), times: data.times,
-    p10: toWind(data.gust.p10), p50: toWind(data.gust.p50), p90: toWind(data.gust.p90),
-    color: '#ffb74d', bandFill: 'rgba(255,183,77,0.35)',
-    yMin0: true, yMinSpan: 5, fmt: v => `${Math.round(v)} ${windUnitLabel()}`, tickFmt: v => Math.round(v),
+    title: 'Accumulated precipitation', unit: 'mm', times: data.times,
+    p10: accumulate(data.precip.p10), p50: accumulate(data.precip.p50), p90: accumulate(data.precip.p90),
+    color: '#64b5f6', bandFill: 'rgba(100,181,246,0.55)', bars: true,
+    yMin0: true, yMinSpan: 2, fmt: v => `${v.toFixed(1)} mm`, tickFmt: v => v.toFixed(1),
   }));
   grid.appendChild(makeEnsembleChart({
     title: 'Cloud cover', unit: '%', times: data.times, ...data.cloud,
@@ -1587,13 +1593,27 @@ function renderEnsembleCharts(data) {
     yMin0: true, yMax: 100, fmt: v => `${Math.round(v)}%`, tickFmt: v => Math.round(v),
   }));
   container.appendChild(grid);
+
+  const note = document.createElement('div');
+  note.className = 'fc-hist-note';
+  note.textContent = 'Accumulated precipitation: bars sum the hourly median since the start of the run, ' +
+    'error bars sum the hourly 10th and 90th percentiles. Only hourly percentiles are published, ' +
+    'so the error bars overstate the spread of the true accumulated total.';
+  container.appendChild(note);
+}
+
+/** Running total of an hourly series; missing hours count as zero. */
+function accumulate(arr) {
+  let sum = 0;
+  return arr.map(v => (sum += v !== null && isFinite(v) ? v : 0));
 }
 
 /**
  * Ensemble percentile chart: shaded 10–90 % band, median line, "now" marker
- * and a hover/tap readout.
+ * and a hover/tap readout. With `bars`, draws median bars with 10–90 % error
+ * bars instead.
  */
-function makeEnsembleChart({ title, unit, times, p10, p50, p90, color, bandFill, yMin0 = false, yMinSpan = 0, yMax = null, fmt = v => v.toFixed(1), tickFmt = v => v }) {
+function makeEnsembleChart({ title, unit, times, p10, p50, p90, color, bandFill, bars = false, yMin0 = false, yMinSpan = 0, yMax = null, fmt = v => v.toFixed(1), tickFmt = v => v }) {
   const W = 640, H = 170;
   const ML = 40, MR = 12, MT = 22, MB = 34;
   const CW = W - ML - MR, CH = H - MT - MB;
@@ -1614,7 +1634,10 @@ function makeEnsembleChart({ title, unit, times, p10, p50, p90, color, bandFill,
   let yHi = yMax !== null ? yMax : rawMax + span * 0.12;
   if (yHi - yLo < yMinSpan) yHi = yLo + yMinSpan;
 
-  const xOf = i => ML + (i / (n - 1)) * CW;
+  // Lines run edge to edge; bars sit centred in one slot per hour
+  const step = bars ? CW / n : CW / (n - 1);
+  const xOf = i => ML + (bars ? (i + 0.5) * step : i * step);
+  const iOf = x => Math.round((x - ML) / step - (bars ? 0.5 : 0));
   const yOf = v => MT + CH - ((Math.max(yLo, Math.min(yHi, v)) - yLo) / (yHi - yLo)) * CH;
 
   const svgNS = 'http://www.w3.org/2000/svg';
@@ -1648,9 +1671,11 @@ function makeEnsembleChart({ title, unit, times, p10, p50, p90, color, bandFill,
     const x = xOf(i);
     const dk = dayKey(times[i]);
     if (dk !== lastDK) {
-      if (i > 0) svg.appendChild(el('line', { x1: x, x2: x, y1: MT, y2: MT + CH + 4, stroke: 'rgba(255,255,255,0.25)', 'stroke-width': '1' }));
+      // Bars: put the day boundary between slots rather than through a bar
+      const xd = bars ? x - step / 2 : x;
+      if (i > 0) svg.appendChild(el('line', { x1: xd, x2: xd, y1: MT, y2: MT + CH + 4, stroke: 'rgba(255,255,255,0.25)', 'stroke-width': '1' }));
       svg.appendChild(el('text', {
-        x: x + 3, y: MT + CH + 28, fill: '#bdbdbd', 'font-size': '10', 'font-family': 'inherit', 'font-weight': '600',
+        x: xd + 3, y: MT + CH + 28, fill: '#bdbdbd', 'font-size': '10', 'font-family': 'inherit', 'font-weight': '600',
       }, dk));
       lastDK = dk;
     }
@@ -1662,8 +1687,27 @@ function makeEnsembleChart({ title, unit, times, p10, p50, p90, color, bandFill,
     }
   }
 
+  if (bars) {
+    // Median bars, 10–90 % whiskers with caps
+    const bw = step * 0.72, cap = Math.max(2, step * 0.4);
+    for (let i = 0; i < n; i++) {
+      const x = xOf(i);
+      if (ok(p50[i]) && p50[i] > 0) {
+        const y = yOf(p50[i]);
+        svg.appendChild(el('rect', { x: x - bw / 2, y, width: bw, height: MT + CH - y, fill: bandFill }));
+      }
+      if (ok(p10[i]) && ok(p90[i]) && p90[i] > p10[i]) {
+        const y1 = yOf(p10[i]), y2 = yOf(p90[i]);
+        svg.appendChild(el('path', {
+          d: `M ${x},${y1} L ${x},${y2} M ${x - cap / 2},${y1} L ${x + cap / 2},${y1} M ${x - cap / 2},${y2} L ${x + cap / 2},${y2}`,
+          fill: 'none', stroke: color, 'stroke-width': '1',
+        }));
+      }
+    }
+  }
+
   // Band, percentile edges, median
-  const idx = times.map((_, i) => i).filter(i => ok(p10[i]) && ok(p90[i]));
+  const idx = bars ? [] : times.map((_, i) => i).filter(i => ok(p10[i]) && ok(p90[i]));
   const pts = arr => idx.map(i => `${xOf(i).toFixed(1)},${yOf(arr[i]).toFixed(1)}`);
   if (idx.length) {
     const hi = pts(p90), lo = pts(p10);
@@ -1672,7 +1716,7 @@ function makeEnsembleChart({ title, unit, times, p10, p50, p90, color, bandFill,
       svg.appendChild(el('path', { d: `M ${pts(arr).join(' L ')}`, fill: 'none', stroke: color, 'stroke-width': '1', 'stroke-opacity': '0.55' }));
     }
   }
-  const medIdx = times.map((_, i) => i).filter(i => ok(p50[i]));
+  const medIdx = bars ? [] : times.map((_, i) => i).filter(i => ok(p50[i]));
   if (medIdx.length) {
     svg.appendChild(el('path', {
       d: 'M ' + medIdx.map(i => `${xOf(i).toFixed(1)},${yOf(p50[i]).toFixed(1)}`).join(' L '),
@@ -1684,7 +1728,7 @@ function makeEnsembleChart({ title, unit, times, p10, p50, p90, color, bandFill,
   const nowIdx = findNowIndex(times);
   if (nowIdx >= 0) {
     const frac = (Date.now() - times[nowIdx].getTime()) / (times[1] - times[0]);
-    const x = ML + ((nowIdx + Math.min(1, frac)) / (n - 1)) * CW;
+    const x = xOf(nowIdx) + Math.min(1, frac) * step;
     if (x <= ML + CW) {
       svg.appendChild(el('line', { x1: x, x2: x, y1: MT, y2: MT + CH, stroke: '#26a69a', 'stroke-width': '1.5' }));
       svg.appendChild(el('text', { x: x + 3, y: MT + 10, fill: '#80cbc4', 'font-size': '9.5', 'font-family': 'inherit' }, 'now'));
@@ -1707,7 +1751,7 @@ function makeEnsembleChart({ title, unit, times, p10, p50, p90, color, bandFill,
   const showAt = clientX => {
     const r = svg.getBoundingClientRect();
     if (!r.width) return;
-    const i = Math.max(0, Math.min(n - 1, Math.round(((clientX - r.left) * (W / r.width) - ML) / CW * (n - 1))));
+    const i = Math.max(0, Math.min(n - 1, iOf((clientX - r.left) * (W / r.width))));
     if (!ok(p50[i])) { hair.setAttribute('visibility', 'hidden'); return; }
     const x = xOf(i), y = yOf(p50[i]);
     hairLine.setAttribute('x1', x); hairLine.setAttribute('x2', x);
