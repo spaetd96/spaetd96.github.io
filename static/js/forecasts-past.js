@@ -486,21 +486,21 @@ function renderMonthlyView(el, data) {
   const yearTimes = ys.map(y => new Date(Date.UTC(y.year, 0, 1)));
   const yearLabel = (i, d) => (d.getUTCFullYear() % 10 === 0 ? String(d.getUTCFullYear()) : null);
   const trendLine = c.trend ? ys.map(y => c.trend.at(y.year) - (y.tm - y.tA)) : null;
-  charts.appendChild(makeDailyChart({
+  const annT = makeDailyChart({
     title: `Annual temperature vs ${ref.label}`, unit: '°C', times: yearTimes,
     bars: { values: ys.map(y => y.tA), color: v => (v >= 0 ? 'rgba(239,83,80,0.8)' : 'rgba(66,165,245,0.8)') },
     lines: trendLine ? [{ values: trendLine, color: '#fff', width: 1.6, dash: '5,3' }] : [],
     symmetric: true, xLabel: yearLabel,
     tickFmt: v => (v > 0 ? '+' : '') + v.toFixed(0) + '°',
     hover: i => `${ys[i].year} · ${signed(ys[i].tA)} °C`,
-  }));
-  charts.appendChild(makeDailyChart({
+  });
+  const annP = makeDailyChart({
     title: `Annual precipitation vs ${ref.label}`, unit: '% of normal', times: yearTimes,
     bars: { values: ys.map(y => y.rP - 100), color: v => (v >= 0 ? 'rgba(66,165,245,0.8)' : 'rgba(188,143,90,0.85)') },
     symmetric: true, symmetricStep: 20, xLabel: yearLabel,
     tickFmt: v => `${Math.round(v + 100)}%`,
     hover: i => `${ys[i].year} · ${Math.round(ys[i].rP)}% of normal`,
-  }));
+  });
 
   // Last 24 months
   const n = data.times.length;
@@ -511,36 +511,40 @@ function renderMonthlyView(el, data) {
     ? (d.getUTCMonth() === 0 ? `Jan ${d.getUTCFullYear()}` : MONTH_ABBR[d.getUTCMonth()]) : null);
   const monthHover = (fmt) => i => `${fmtMonthYear(mTimes[i])} · ${fmt(i)}`;
   const tA = sl(c.tA), rP = sl(c.rP), sP = sl(c.sP);
-  charts.appendChild(makeDailyChart({
+  const monT = makeDailyChart({
     title: `Monthly temperature vs ${ref.label} · last 24 months`, unit: '°C', times: mTimes,
     bars: { values: tA, color: v => (v >= 0 ? 'rgba(239,83,80,0.8)' : 'rgba(66,165,245,0.8)') },
     symmetric: true, xLabel: monthLabel,
     tickFmt: v => (v > 0 ? '+' : '') + v.toFixed(0) + '°',
     hover: monthHover(i => (isNum(tA[i]) ? `${signed(tA[i])} °C` : 'no data')),
-  }));
+  });
   // Precipitation can't drop below 0 % of normal: axis from 0 % up to a multiple of 200 %
   const rMax = Math.max(100, ...rP.filter(isNum));
-  charts.appendChild(makeDailyChart({
+  const monP = makeDailyChart({
     title: 'Monthly precipitation · last 24 months', unit: '% of normal', times: mTimes,
     bars: { values: rP.map(v => (isNum(v) ? v - 100 : null)), color: v => (v >= 0 ? 'rgba(66,165,245,0.8)' : 'rgba(188,143,90,0.85)') },
     yRange: [-100, -100 + Math.ceil(rMax / 200) * 200], xLabel: monthLabel,
     tickFmt: v => `${Math.round(v + 100)}%`,
     hover: monthHover(i => (isNum(rP[i]) ? `${Math.round(rP[i])}% of normal (${Math.round(sl(data.rr)[i])} mm)` : 'no data')),
-  }));
-  charts.appendChild(makeDailyChart({
+  });
+  const monS = makeDailyChart({
     title: 'Monthly sunshine · last 24 months', unit: '% of normal', times: mTimes,
     bars: { values: sP.map(v => (isNum(v) ? v - 100 : null)), color: v => (v >= 0 ? 'rgba(255,202,40,0.85)' : 'rgba(144,164,174,0.8)') },
     symmetric: true, symmetricStep: 20, xLabel: monthLabel,
     tickFmt: v => `${Math.round(v + 100)}%`,
     hover: monthHover(i => (isNum(sP[i]) ? `${Math.round(sP[i])}% of normal (${Math.round(sl(data.sun)[i])} h)` : 'no data')),
-  }));
-  charts.appendChild(makeDailyChart({
+  });
+  const annS = makeDailyChart({
     title: `Annual sunshine vs ${ref.label}`, unit: '% of normal', times: yearTimes,
     bars: { values: ys.map(y => y.sP - 100), color: v => (v >= 0 ? 'rgba(255,202,40,0.85)' : 'rgba(144,164,174,0.8)') },
     symmetric: true, symmetricStep: 10, xLabel: yearLabel,
     tickFmt: v => `${Math.round(v + 100)}%`,
     hover: i => `${ys[i].year} · ${Math.round(ys[i].sP)}% of normal`,
-  }));
+  });
+
+  // Two columns: annual charts on the left, last 24 months on the right,
+  // one row each for temperature, precipitation and sunshine
+  charts.append(annT, monT, annP, monP, annS, monS);
   el.appendChild(charts);
 
   el.appendChild(creditLine(
