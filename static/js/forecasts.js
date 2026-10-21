@@ -74,7 +74,7 @@ const MODELS = {
     resource: 'ensemble-v2-1h-1km',
     label:    'Ensemble',
     desc:     'Probabilistic forecast showing uncertainty \u00b7 hourly steps up to 60 h \u00b7 range of likely outcomes',
-    params:   '2t_p10,2t_p50,2t_p90,tp_p10,tp_p50,tp_p90,10fg_p10,10fg_p50,10fg_p90,tcc_p10,tcc_p50,tcc_p90',
+    params:   '2t_p10,2t_p50,2t_p90,tp_p10,tp_p50,tp_p90,10fg_p10,10fg_p50,10fg_p90,tcc_p10,tcc_p50,tcc_p90,10u_p50,10v_p50',
     dataUrl:  'https://data.hub.geosphere.at/dataset/ensemble-v2-1h-1km',
     doi:      null,
     doiUrl:   null,
@@ -115,7 +115,7 @@ const MODELS = {
   },
   stations: {
     label:    'Stations',
-    desc:     'Current weather from ~260 Austrian TAWES stations + South Tyrol (SIAG) stations + Trentino (Meteotrentino) stations · 24 h history for Austrian stations',
+    desc:     'Current weather from ~260 Austrian TAWES stations + South Tyrol (SIAG) stations + Trentino (Meteotrentino) stations · 48 h history for Austrian stations',
     dataUrl:  'https://data.hub.geosphere.at/dataset/tawes-v1-10min',
     dataUrl2: 'https://data.hub.geosphere.at/dataset/tawes-v1-10min',
     doi:      null,
@@ -138,7 +138,7 @@ const MAP_MIN_ZOOM = 7, MAP_MAX_ZOOM = 12;
 const TAWES_RESOURCE = 'tawes-v1-10min';
 const STATION_PARAMS = 'TL,RR,FF,DD,FFX,RF,P,SCHNEE';
 const HIST_RESOURCE = 'tawes-v1-10min';
-const HIST_PARAMS = 'TL,RF,P,FF';
+const HIST_PARAMS = 'TL,RF,P,FF,RR';
 
 const MS_TO_KT = 1.94384;
 
@@ -211,7 +211,7 @@ let hintTimeout = null;
 let ensembleWanted = false;  // user opened the ensemble; keep it open for new locations
 let ensembleCache = null;    // { key, data } for the last fetched point
 let ensembleReq = 0;         // invalidates in-flight ensemble requests
-let histWanted = false;      // same for the station 24 h history
+let histWanted = false;      // same for the station 48 h history
 
 // ── Init ─────────────────────────────────────────────────────────────────────
 
@@ -554,7 +554,7 @@ function updateInfoBox() {
     credit = 'Comparing IFS HRES, ICON-CH and C-LAEF AlpeAdria forecasts';
   } else if (m.isStation) {
     credit = `Data: <a href="${m.dataUrl}" target="_blank" rel="noopener">GeoSphere TAWES</a> (current) · ` +
-             `<a href="${m.dataUrl2}" target="_blank" rel="noopener">GeoSphere TAWES</a> (24 h history, 30 min display) · ` +
+             `<a href="${m.dataUrl2}" target="_blank" rel="noopener">GeoSphere TAWES</a> (48 h history, 30 min display) · ` +
              `<a href="https://weather.province.bz.it/" target="_blank" rel="noopener">SIAG South Tyrol</a> (CC0) · ` +
              `<a href="https://www.meteotrentino.it/" target="_blank" rel="noopener">Meteotrentino</a> (CC BY 4.0)`;
   } else if (m.isOpenMeteo) {
@@ -1540,6 +1540,12 @@ function processEnsembleTimeseries(json) {
     precip:  triple('tp'),
     gust:    triple('10fg'),
     cloud:   triple('tcc'),
+    // Percentiles of u and v cannot be combined into percentiles of speed, so
+    // only the speed implied by the median components is available.
+    wind50:  col('10u_p50').map((u, i) => {
+      const v = col('10v_p50')[i];
+      return u === null || v === null || v === undefined ? null : Math.hypot(u, v);
+    }),
   };
 }
 
@@ -1571,6 +1577,17 @@ function renderEnsembleCharts(data) {
     fmt: v => `${v.toFixed(1)}°`, tickFmt: v => `${Math.round(v)}°`,
   }));
   grid.appendChild(makeEnsembleChart({
+    title: 'Cloud cover', unit: '%', times: data.times, ...data.cloud,
+    color: '#cfd8dc', bandFill: 'rgba(176,190,197,0.32)',
+    yMin0: true, yMax: 100, fmt: v => `${Math.round(v)}%`, tickFmt: v => Math.round(v),
+  }));
+  grid.appendChild(makeEnsembleChart({
+    title: 'Wind speed', unit: windUnitLabel(), times: data.times,
+    p10: data.wind50.map(() => null), p50: toWind(data.wind50), p90: data.wind50.map(() => null),
+    color: '#ce93d8', bandFill: 'rgba(206,147,216,0.35)',
+    yMin0: true, yMinSpan: 5, fmt: v => `${Math.round(v)} ${windUnitLabel()}`, tickFmt: v => Math.round(v),
+  }));
+  grid.appendChild(makeEnsembleChart({
     title: 'Wind gusts', unit: windUnitLabel(), times: data.times,
     p10: toWind(data.gust.p10), p50: toWind(data.gust.p50), p90: toWind(data.gust.p90),
     color: '#ffb74d', bandFill: 'rgba(255,183,77,0.35)',
@@ -1587,18 +1604,14 @@ function renderEnsembleCharts(data) {
     color: '#64b5f6', bandFill: 'rgba(100,181,246,0.55)', bars: true,
     yMin0: true, yMinSpan: 2, fmt: v => `${v.toFixed(1)} mm`, tickFmt: v => v.toFixed(1),
   }));
-  grid.appendChild(makeEnsembleChart({
-    title: 'Cloud cover', unit: '%', times: data.times, ...data.cloud,
-    color: '#cfd8dc', bandFill: 'rgba(176,190,197,0.32)',
-    yMin0: true, yMax: 100, fmt: v => `${Math.round(v)}%`, tickFmt: v => Math.round(v),
-  }));
   container.appendChild(grid);
 
   const note = document.createElement('div');
   note.className = 'fc-hist-note';
   note.textContent = 'Accumulated precipitation: bars sum the hourly median since the start of the run, ' +
     'error bars sum the hourly 10th and 90th percentiles. Only hourly percentiles are published, ' +
-    'so the error bars overstate the spread of the true accumulated total.';
+    'so the error bars overstate the spread of the true accumulated total. ' +
+    'Wind speed is derived from the median wind components, so it has no percentile range.';
   container.appendChild(note);
 }
 
@@ -2502,7 +2515,7 @@ function renderStationData(params, station, timestamp) {
   html += '</div>';
 
   html += `<div class="fc-hist-btn-wrap">
-    <button class="fc-hist-btn" id="fc-hist-btn" aria-expanded="false">Show past 24 hours ▾</button>
+    <button class="fc-hist-btn" id="fc-hist-btn" aria-expanded="false">Show past 48 hours ▾</button>
   </div>
   <div id="fc-hist-charts-placeholder"></div>`;
 
@@ -2528,9 +2541,9 @@ function setHistButton(state) {
   btn.disabled = state === 'loading';
   btn.setAttribute('aria-expanded', String(state === 'open'));
   btn.textContent = {
-    closed:  'Show past 24 hours ▾',
+    closed:  'Show past 48 hours ▾',
     loading: 'Loading…',
-    open:    'Hide past 24 hours ▴',
+    open:    'Hide past 48 hours ▴',
     error:   'No history data available · retry',
   }[state];
 }
@@ -2561,7 +2574,7 @@ async function fetchStationHistory(stationId) {
   if (stationId == null) return null;
   const now = new Date();
   const end = now.toISOString().substring(0, 16);
-  const start = new Date(now - 24 * 3600 * 1000).toISOString().substring(0, 16);
+  const start = new Date(now - 48 * 3600 * 1000).toISOString().substring(0, 16);
   const url = `${API_BASE}/station/historical/${HIST_RESOURCE}?parameters=${HIST_PARAMS}&station_ids=${stationId}&start=${start}&end=${end}`;
   try {
     const json = await fetchJSON(url);
@@ -2576,6 +2589,7 @@ async function fetchStationHistory(stationId) {
     const humidityData = p.RF?.data ?? p.rf?.data ?? [];
     const pressureData = p.P?.data ?? p.p?.data ?? [];
     const windData = p.FF?.data ?? p.ff?.data ?? [];
+    const rainData = p.RR?.data ?? p.rr?.data ?? [];
 
     // Keep every 30-minute slot to reduce clutter while preserving sub-hourly detail.
     const sampledIdx = [];
@@ -2586,7 +2600,22 @@ async function fetchStationHistory(stationId) {
     if (sampledIdx.length < 2) return null;
 
     const pick = arr => sampledIdx.map(i => (i < arr.length ? arr[i] : null));
+
+    // RR is the 10 min sum ending at the timestamp, so a value stamped exactly
+    // on the hour belongs to the previous hour.
+    const bins = new Map();
+    for (let i = 0; i < times.length; i++) {
+      const v = rainData[i];
+      if (v === null || v === undefined || !isFinite(v)) continue;
+      const hourStart = Math.floor((times[i].getTime() - 1) / 3600000) * 3600000;
+      bins.set(hourStart, (bins.get(hourStart) ?? 0) + v);
+    }
+    const rainHours = [...bins.keys()].sort((a, b) => a - b);
+    let run = 0;
     return {
+      rainTimes: rainHours.map(t => new Date(t)),
+      rainHourly: rainHours.map(t => bins.get(t)),
+      rainAccum: rainHours.map(t => (run += bins.get(t))),
       times: sampledIdx.map(i => times[i]),
       temp: pick(tempData),
       humidity: pick(humidityData),
@@ -2608,7 +2637,7 @@ function renderStationHistoryCharts(histData) {
   wrap.className = 'fc-station-charts';
   const histHeading = document.createElement('h3');
   histHeading.className = 'fc-section-heading';
-  histHeading.textContent = 'Last 24 hours · 30 min values · hover or tap for details';
+  histHeading.textContent = 'Last 48 hours · 30 min values (precipitation hourly) · hover or tap for details';
   wrap.appendChild(histHeading);
   const grid = document.createElement('div');
   grid.className = 'fc-chart-grid';
@@ -2619,6 +2648,12 @@ function renderStationHistoryCharts(histData) {
     { name: 'wind', title: `Wind (${windLabel})`, values: histData.wind.map(toWind), color: '#ce93d8', yMin0: true },
   ];
   // Not every station measures everything (e.g. wind-only rooftop sites)
+  series.push(
+    { name: 'precipitation', title: 'Precipitation (mm/h)', values: histData.rainHourly, times: histData.rainTimes,
+      color: '#64b5f6', yMin0: true, bars: true, dec: 2 },
+    { name: 'accumulated precipitation', title: 'Accumulated precipitation (mm)', values: histData.rainAccum, times: histData.rainTimes,
+      color: '#4fc3f7', yMin0: true, bars: true, dec: 2 },
+  );
   const hasData = v => v.filter(x => x !== null && isFinite(x)).length >= 2;
   const missing = series.filter(c => !hasData(c.values)).map(c => c.name);
   for (const c of series.filter(c => hasData(c.values))) {
@@ -2634,7 +2669,7 @@ function renderStationHistoryCharts(histData) {
   container.appendChild(wrap);
 }
 
-function makeHistoryChart({ title, times, values, color, yMin0 = false, yMax = null }) {
+function makeHistoryChart({ title, times, values, color, yMin0 = false, yMax = null, bars = false, dec = 1 }) {
   const W = 640, H = 150;
   const ML = 40, MR = 12, MT = 22, MB = 34;
   const CW = W - ML - MR, CH = H - MT - MB;
@@ -2652,7 +2687,10 @@ function makeHistoryChart({ title, times, values, color, yMin0 = false, yMax = n
   let yHi = yMax !== null ? yMax : rawMax + span * 0.1;
   if (yHi <= yLo) { yLo -= 1; yHi += 1; }
 
-  const xOf = i => ML + (i / Math.max(n - 1, 1)) * CW;
+  // Bars sit centred in one slot per value; lines run edge to edge
+  const step = bars ? CW / n : CW / Math.max(n - 1, 1);
+  const xOf = i => ML + (bars ? (i + 0.5) * step : i * step);
+  const iOf = x => Math.round((x - ML) / step - (bars ? 0.5 : 0));
   const yOf = v => MT + CH - ((v - yLo) / (yHi - yLo)) * CH;
   const clamp = v => Math.max(yLo, Math.min(yHi, v));
 
@@ -2695,9 +2733,10 @@ function makeHistoryChart({ title, times, values, color, yMin0 = false, yMax = n
     const x = xOf(i);
     // Day labels on a second row so they never collide with the hour ticks
     if (dk !== prevDK) {
-      if (i > 0) svg.appendChild(el('line', { x1: x, x2: x, y1: MT, y2: MT + CH + 4, stroke: 'rgba(255,255,255,0.25)', 'stroke-width': '1' }));
+      const xd = bars ? x - step / 2 : x;
+      if (i > 0) svg.appendChild(el('line', { x1: xd, x2: xd, y1: MT, y2: MT + CH + 4, stroke: 'rgba(255,255,255,0.25)', 'stroke-width': '1' }));
       svg.appendChild(el('text', {
-        x: x + 3, y: MT + CH + 28,
+        x: xd + 3, y: MT + CH + 28,
         fill: '#bdbdbd', 'font-size': '10', 'font-family': 'inherit', 'font-weight': '600',
       }, dk));
       prevDK = dk;
@@ -2711,10 +2750,20 @@ function makeHistoryChart({ title, times, values, color, yMin0 = false, yMax = n
     }
   }
 
+  if (bars) {
+    const bw = step * 0.78;
+    for (let i = 0; i < n; i++) {
+      const v = values[i];
+      if (v === null || !isFinite(v) || v <= 0) continue;
+      const y = yOf(clamp(v));
+      svg.appendChild(el('rect', { x: xOf(i) - bw / 2, y, width: bw, height: MT + CH - y, fill: color, 'fill-opacity': '0.75' }));
+    }
+  }
+
   // Line path (with gap handling for nulls)
   let pathD = '';
   let inSeg = false;
-  for (let i = 0; i < n; i++) {
+  for (let i = 0; i < n && !bars; i++) {
     const v = values[i];
     if (v === null || !isFinite(v)) { inSeg = false; continue; }
     const x = xOf(i).toFixed(1);
@@ -2752,7 +2801,7 @@ function makeHistoryChart({ title, times, values, color, yMin0 = false, yMax = n
     const svgRect = svg.getBoundingClientRect();
     if (!svgRect.width) return;
     const svgX = (e.clientX - svgRect.left) * (W / svgRect.width);
-    const idx = Math.max(0, Math.min(n - 1, Math.round((svgX - ML) / CW * (n - 1))));
+    const idx = Math.max(0, Math.min(n - 1, iOf(svgX)));
     const v = values[idx];
     if (v === null || !isFinite(v)) { hairG.setAttribute('visibility', 'hidden'); return; }
     const px = xOf(idx);
@@ -2765,7 +2814,7 @@ function makeHistoryChart({ title, times, values, color, yMin0 = false, yMax = n
     const mm = (displayTZ === 'UTC' ? t.getUTCMinutes() : t.getMinutes()).toString().padStart(2, '0');
     const dayFmt = t.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short', timeZone: tzOpt2 });
     const unit   = title.match(/\(([^)]+)\)/)?.[1] ?? '';
-    const valStr = v.toFixed(1);
+    const valStr = v.toFixed(dec);
     const label  = `${valStr} ${unit}, ${dayFmt}, ${hh}:${mm}`;
     hairTxt.textContent = label;
     const approxW = label.length * 5.9 + 10;
