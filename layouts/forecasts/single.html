@@ -9,14 +9,20 @@
   {{/* Top-left info box with model switcher */}}
   <div id="fc-info-box">
     <div id="fc-info-title">IFS HRES</div>
-    <div id="fc-tabs" role="tablist">
-      <button type="button" class="fc-tab" data-group="now" role="tab">Now</button>
-      <button type="button" class="fc-tab" data-group="forecast" role="tab">Forecast</button>
-      <button type="button" class="fc-tab" data-group="past" role="tab">Past</button>
+    <div id="fc-tabs-row">
+      <div id="fc-tabs" role="tablist">
+        <button type="button" class="fc-tab" data-group="now" role="tab">Now</button>
+        <button type="button" class="fc-tab" data-group="forecast" role="tab">Forecast</button>
+        <button type="button" class="fc-tab" data-group="past" role="tab">Past</button>
+      </div>
+      {{/* Mobile only: shows the description and credits */}}
+      <button type="button" id="fc-info-toggle" aria-expanded="false" aria-controls="fc-info-details" title="About this dataset" aria-label="About this dataset">i</button>
     </div>
     <div id="fc-subchips"></div>
-    <div id="fc-info-resolution"></div>
-    <div id="fc-info-credit"></div>
+    <div id="fc-info-details">
+      <div id="fc-info-resolution"></div>
+      <div id="fc-info-credit"></div>
+    </div>
   </div>
 
   {{/* Map (location picker only) */}}

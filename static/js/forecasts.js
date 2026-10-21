@@ -251,9 +251,18 @@ function initMap() {
 
   map.on('click', onMapClick);
   map.on('moveend', writeHash);
+  map.on('dragstart', () => setInfoOpen(false));
 }
 
 function initControls() {
+  document.getElementById('fc-info-toggle').addEventListener('click', () => {
+    setInfoOpen(!document.getElementById('fc-info-box').classList.contains('fc-info-open'));
+  });
+
+  const chips = document.getElementById('fc-subchips');
+  chips.addEventListener('scroll', updateChipFade, { passive: true });
+  window.addEventListener('resize', updateChipFade);
+
   document.querySelectorAll('.fc-tab').forEach(btn => {
     btn.addEventListener('click', () => {
       const group = btn.dataset.group;
@@ -357,13 +366,31 @@ function renderModelTabs() {
     chip.addEventListener('click', () => { if (key !== currentModel) setModel(key); });
     chips.appendChild(chip);
   }
+  // On phones the chips scroll sideways; keep the active one in view
+  const active = chips.querySelector('.fc-chip.active');
+  if (active && active.offsetLeft + active.offsetWidth > chips.scrollLeft + chips.clientWidth) {
+    chips.scrollLeft = active.offsetLeft + active.offsetWidth - chips.clientWidth;
+  }
+  updateChipFade();
+}
+
+/** Fade the chip strip's right edge while chips are hidden past it. */
+function updateChipFade() {
+  const chips = document.getElementById('fc-subchips');
+  chips.classList.toggle('fc-chips-more', chips.scrollLeft + chips.clientWidth < chips.scrollWidth - 2);
+}
+
+function setInfoOpen(open) {
+  document.getElementById('fc-info-box').classList.toggle('fc-info-open', open);
+  document.getElementById('fc-info-toggle').setAttribute('aria-expanded', String(open));
 }
 
 function defaultHintText() {
   const m = MODELS[currentModel];
-  if (m.isStation) return 'Click on a station to see current measurements';
-  if (m.isHistorical) return 'Click anywhere in Austria to see past weather and climate';
-  return 'Click anywhere on the map to see a weather forecast';
+  const verb = touchQuery.matches ? 'Tap' : 'Click';
+  if (m.isStation) return `${verb} on a station to see current measurements`;
+  if (m.isHistorical) return `${verb} anywhere in Austria to see past weather and climate`;
+  return `${verb} anywhere on the map to see a weather forecast`;
 }
 
 /** Briefly show a message in the hint bubble, then restore the default hint. */
@@ -499,7 +526,8 @@ function initLocate() {
         flashHint('Your location is outside the area covered by this map');
         return;
       }
-      map.setView([lat, lng], Math.max(map.getZoom(), 10));
+      const zoom = Math.max(map.getZoom(), 10);
+      map.setView(centerAbovePanel(L.latLng(lat, lng), zoom), zoom);
       selectLocation(lat, lng);
     }, () => {
       done();
@@ -569,7 +597,49 @@ function updateInfoBox() {
 // ── Map click ────────────────────────────────────────────────────────────────
 
 function onMapClick(e) {
+  setInfoOpen(false);
+  keepAbovePanel(e.latlng);
   selectLocation(e.latlng.lat, e.latlng.lng);
+}
+
+// ── Mobile layout ────────────────────────────────────────────────────────────
+
+const mobileQuery = window.matchMedia('(max-width: 640px)');
+const touchQuery = window.matchMedia('(pointer: coarse)');
+
+/**
+ * On phones, the band of the map (container y range) that stays visible
+ * between the controls at the top and the open panel (max 65vh) at the bottom.
+ */
+function visibleMapBand() {
+  const mapTop = map.getContainer().getBoundingClientRect().top;
+  const top = document.getElementById('fc-info-box').getBoundingClientRect().bottom - mapTop;
+  const bottom = map.getSize().y - window.innerHeight * 0.65;
+  return { top, bottom: Math.max(bottom, top) };
+}
+
+/** Pan so a selected point isn't hidden under the panel or the top controls. */
+function keepAbovePanel(latlng) {
+  if (!mobileQuery.matches) return;
+  const { top, bottom } = visibleMapBand();
+  const y = map.latLngToContainerPoint(latlng).y;
+  if (y >= top + 20 && y <= bottom - 20) return;
+  map.panBy([0, y - (top + bottom) / 2]);
+}
+
+/** Map center that puts `latlng` in the visible band at `zoom` (phones only). */
+function centerAbovePanel(latlng, zoom) {
+  if (!mobileQuery.matches) return latlng;
+  const { top, bottom } = visibleMapBand();
+  const dy = map.getSize().y / 2 - (top + bottom) / 2;
+  return map.unproject(map.project(latlng, zoom).add([0, dy]), zoom);
+}
+
+/** flyToBounds padding that keeps the bounds inside the visible band. */
+function boundsPaddingAbovePanel() {
+  if (!mobileQuery.matches) return {};
+  const { top, bottom } = visibleMapBand();
+  return { paddingTopLeft: [0, top], paddingBottomRight: [0, map.getSize().y - bottom] };
 }
 
 // ── Forecast location label ──────────────────────────────────────────────────
@@ -1933,9 +2003,10 @@ async function searchLocation(query) {
 
         if (item.boundingbox) {
           const bb = item.boundingbox;
-          map.flyToBounds([[bb[0], bb[2]], [bb[1], bb[3]]], { duration: 1, maxZoom: 13 });
+          map.flyToBounds([[bb[0], bb[2]], [bb[1], bb[3]]],
+            { duration: 1, maxZoom: 13, ...boundsPaddingAbovePanel() });
         } else {
-          map.flyTo([lat, lon], 10, { duration: 1 });
+          map.flyTo(centerAbovePanel(L.latLng(lat, lon), 10), 10, { duration: 1 });
         }
 
         const shortName = item.display_name.split(',').slice(0, 2).join(',').trim();
@@ -2015,6 +2086,8 @@ function addStationMarker(type, s, color, tooltip) {
   });
   marker.bindTooltip(tooltip, { direction: 'top', offset: [0, -6] });
   marker.on('click', () => {
+    setInfoOpen(false);
+    keepAbovePanel(marker.getLatLng());
     selectedLatLng = L.latLng(s.lat, s.lon);
     selectedLabel = null;
     writeHash();

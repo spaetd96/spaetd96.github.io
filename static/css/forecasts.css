@@ -79,13 +79,39 @@ footer        { display: none !important; }
 
 /* Tabs (Now / Forecast) + model chips */
 
+#fc-tabs-row {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  margin: 2px 0 6px;
+}
+
 #fc-tabs {
+  flex: 1;
   display: flex;
   gap: 2px;
   background: rgba(255,255,255,0.06);
   border-radius: 6px;
   padding: 2px;
-  margin: 2px 0 6px;
+}
+
+#fc-info-toggle {
+  display: none;
+  flex-shrink: 0;
+  width: 40px;
+  background: rgba(255,255,255,0.06);
+  border: none;
+  border-radius: 6px;
+  color: #bdbdbd;
+  font-family: Georgia, serif;
+  font-size: 1.05rem;
+  font-style: italic;
+  font-weight: 700;
+  cursor: pointer;
+}
+#fc-info-toggle[aria-expanded="true"] {
+  background: #26a69a;
+  color: #fff;
 }
 
 .fc-tab {
@@ -131,6 +157,7 @@ footer        { display: none !important; }
 
 .fc-tab:focus-visible,
 .fc-chip:focus-visible,
+#fc-info-toggle:focus-visible,
 #fc-locate-btn:focus-visible {
   outline: 2px solid #80cbc4;
   outline-offset: 1px;
@@ -653,28 +680,71 @@ footer        { display: none !important; }
     border-radius: 12px 12px 0 0;
   }
   .fc-legend-bar { width: 50px; }
-  /* Info box: anchor right edge so it can't reach the search box */
+  /* The search bar takes the title bar's place */
+  #fc-title-bar { display: none; }
+  /* Pinch zoom replaces the +/- buttons, which would sit under the panel */
+  #fc-map .leaflet-control-zoom { display: none; }
+
+  /* Search: full-width bar at the top. Above the info box so results overlap it */
+  #fc-search-box {
+    width: auto;
+    top: 8px;
+    left: 8px;
+    right: 8px;
+    z-index: 1002;
+  }
+  #fc-search-input {
+    min-height: 44px;
+    padding: 10px 12px;
+    font-size: 16px; /* prevents iOS auto-zoom on focus */
+  }
+  #fc-locate-btn { width: 44px; }
+  #fc-search-results { max-height: 50vh; }
+  .fc-search-item {
+    padding: 12px 14px;
+    font-size: 0.85rem;
+  }
+
+  /* Info box: full-width strip of tabs and chips below the search bar;
+     the description and credits open with the (i) button */
   #fc-info-box {
-    top: 10px;
-    right: 175px;
+    top: 60px;
+    left: 8px;
+    right: 8px;
     max-width: none;
-    padding: 8px 10px;
+    padding: 6px;
+  }
+  #fc-info-title { display: none; }
+  #fc-info-toggle { display: block; }
+  #fc-info-details { display: none; }
+  #fc-info-box.fc-info-open #fc-info-details {
+    display: block;
+    max-height: 40vh;
+    overflow-y: auto;
+    padding: 6px 4px 0;
+  }
+  .fc-tab {
+    min-height: 40px;
+    font-size: 0.85rem;
   }
   #fc-subchips {
+    position: relative; /* offsetLeft of the chips is relative to the strip */
     flex-wrap: nowrap;
     overflow-x: auto;
     scrollbar-width: none;
+    margin-bottom: 0;
   }
   #fc-subchips::-webkit-scrollbar { display: none; }
-  /* Search box: fixed width, flush to right */
-  #fc-search-box {
-    width: 160px;
-    top: 10px;
-    right: 10px;
+  /* Fade the right edge while more chips are hidden off-screen */
+  #fc-subchips.fc-chips-more {
+    -webkit-mask-image: linear-gradient(to right, #000 80%, transparent);
+    mask-image: linear-gradient(to right, #000 80%, transparent);
   }
-  #fc-search-input {
-    padding: 6px 10px;
-    font-size: 16px; /* prevents iOS auto-zoom on focus */
+  .fc-chip {
+    min-height: 36px;
+    padding: 6px 12px;
+    font-size: 0.8rem;
+    border-radius: 18px;
   }
   #fc-outer {
     height: 100svh;
@@ -704,23 +774,27 @@ footer        { display: none !important; }
     max-height: 85vh;
   }
   #fc-forecast-header {
-    padding: 6px 10px;
+    padding: 2px 6px 4px 12px;
   }
   #fc-forecast-header-right {
     gap: 5px;
     flex-shrink: 0;
   }
   #fc-forecast-location {
-    font-size: 0.74rem;
+    font-size: 0.8rem;
   }
   #fc-unit-toggle,
   #fc-tz-toggle {
-    padding: 2px 6px;
-    font-size: 0.71rem;
+    min-height: 36px;
+    min-width: 48px;
+    padding: 4px 10px;
+    font-size: 0.8rem;
   }
   #fc-forecast-close {
-    font-size: 1rem;
-    padding: 2px 5px;
+    width: 40px;
+    height: 40px;
+    font-size: 1.2rem;
+    padding: 0;
   }
   #fc-forecast-table td {
     min-width: 38px;
@@ -973,7 +1047,11 @@ footer        { display: none !important; }
 }
 
 @media (max-width: 640px) {
-  #fc-panel-handle { display: block; }
+  /* Taller hit area for tapping or swiping the sheet */
+  #fc-panel-handle {
+    display: block;
+    padding: 10px 0 6px;
+  }
 }
 
 /* ── No-data cells (unified time axis fill beyond model forecast range) ── */
