@@ -91,7 +91,7 @@ const MODELS = {
     resource: 'ensemble-v2-1h-1km',
     label:    'Ensemble',
     desc:     'C-LAEF AlpeAdria ensemble \u00b7 probabilistic forecast showing uncertainty \u00b7 hourly steps up to 60 h \u00b7 range of likely outcomes',
-    params:   '2t_p10,2t_p50,2t_p90,tp_p10,tp_p50,tp_p90,10fg_p10,10fg_p50,10fg_p90,tcc_p10,tcc_p50,tcc_p90,10u_p10,10u_p50,10u_p90,10v_p10,10v_p50,10v_p90',
+    params:   '2t_p10,2t_p50,2t_p90,tp_p10,tp_p50,tp_p90,sf_p10,sf_p50,sf_p90,10fg_p10,10fg_p50,10fg_p90,tcc_p10,tcc_p50,tcc_p90,10u_p10,10u_p50,10u_p90,10v_p10,10v_p50,10v_p90',
     dataUrl:  'https://data.hub.geosphere.at/dataset/ensemble-v2-1h-1km',
     doi:      null,
     doiUrl:   null,
@@ -952,7 +952,7 @@ function memberPercentiles(hourly, variable) {
   return out;
 }
 
-const ENSEMBLE_VARS = { temp: 'temperature_2m', precip: 'precipitation', wind: 'wind_speed_10m', gust: 'wind_gusts_10m', cloud: 'cloud_cover' };
+const ENSEMBLE_VARS = { temp: 'temperature_2m', precip: 'precipitation', snow: 'snowfall', wind: 'wind_speed_10m', gust: 'wind_gusts_10m', cloud: 'cloud_cover' };
 
 async function fetchMemberEnsemble(lat, lng, cfg) {
   const vars = Object.values(ENSEMBLE_VARS).join(',');
@@ -973,7 +973,7 @@ async function fetchMemberEnsemble(lat, lng, cfg) {
   const startMs = new Date().setMinutes(0, 0, 0);
   const endMs = startMs + ENSEMBLE_HOURS * 3.6e6;
   const empty = () => ({ p10: [], p50: [], p90: [] });
-  const out = { isEnsemble: true, times: [], refTime: null, temp: empty(), precip: empty(), wind: empty(), gust: empty(), cloud: empty() };
+  const out = { isEnsemble: true, times: [], refTime: null, temp: empty(), precip: empty(), snow: empty(), wind: empty(), gust: empty(), cloud: empty() };
   let coveredUntil = startMs - 1;
   let transitionIndex = null;
   parts.forEach((part, pi) => {
@@ -991,6 +991,20 @@ async function fetchMemberEnsemble(lat, lng, cfg) {
     if (out.times.length) coveredUntil = out.times[out.times.length - 1].getTime();
   });
   if (!out.times.length) throw new Error('No ensemble data');
+
+  // A variable can end earlier than the others in one part (ICON-CH1 snowfall); borrow it from another part
+  out.times.forEach((t, i) => {
+    for (const name of Object.keys(ENSEMBLE_VARS)) {
+      if (out[name].p50[i] !== null) continue;
+      for (const part of parts) {
+        const j = part.times.findIndex(pt => pt.getTime() === t.getTime());
+        if (j >= 0 && part.stats[name].p50[j] !== null) {
+          for (const q of ['p10', 'p50', 'p90']) out[name][q][i] = part.stats[name][q][j];
+          break;
+        }
+      }
+    }
+  });
 
   // Only mark a switch if a later part actually contributed steps
   out.transitionIndex = transitionIndex !== null && transitionIndex < out.times.length ? transitionIndex : null;
@@ -1727,6 +1741,7 @@ function processEnsembleTimeseries(json) {
     refTime: json.reference_time ? new Date(json.reference_time) : null,
     temp:    triple('2t'),
     precip:  triple('tp'),
+    snow:    triple('sf'),
     gust:    triple('10fg'),
     cloud:   triple('tcc'),
     wind:    windSpeedRange(triple('10u'), triple('10v')),
@@ -1812,18 +1827,33 @@ function renderEnsembleCharts(data) {
     color: '#64b5f6', bandFill: 'rgba(100,181,246,0.55)', bars: true,
     yMin0: true, yMinSpan: 2, fmt: v => `${v.toFixed(1)} mm`, tickFmt: v => v.toFixed(1),
   }));
+  // Snow charts only when snow is forecast, like the snow row in the table
+  if (data.snow && data.snow.p90.some(v => v !== null && v > 0.05)) {
+    grid.appendChild(makeEnsembleChart({
+      title: 'Snowfall', unit: 'mm/h', times: data.times, ...data.snow, ...tr,
+      color: '#b3e5fc', bandFill: 'rgba(179,229,252,0.4)',
+      yMin0: true, yMinSpan: 1, fmt: v => `${v.toFixed(1)} mm`, tickFmt: v => v.toFixed(1),
+    }));
+    grid.appendChild(makeEnsembleChart({
+      title: 'Accumulated snowfall', unit: 'mm', times: data.times, ...tr,
+      p10: accumulate(data.snow.p10), p50: accumulate(data.snow.p50), p90: accumulate(data.snow.p90),
+      color: '#b3e5fc', bandFill: 'rgba(179,229,252,0.6)', bars: true,
+      yMin0: true, yMinSpan: 2, fmt: v => `${v.toFixed(1)} mm`, tickFmt: v => v.toFixed(1),
+    }));
+  }
   container.appendChild(grid);
 
   const note = document.createElement('div');
   note.className = 'fc-hist-note';
-  const accNote = 'Accumulated precipitation: bars sum the hourly median since the start of the chart, ' +
+  const accNote = 'Accumulated precipitation and snowfall: bars sum the hourly median since the start of the chart, ' +
     'error bars sum the hourly 10th and 90th percentiles. Only hourly percentiles are used, ' +
     'so the error bars overstate the spread of the true accumulated total. ';
   note.textContent = data.fromMembers
     ? accNote + 'Percentiles are computed in the browser from the individual ensemble members (control included), ' +
       'so with few members (ICON-CH1: 11) the 10th and 90th percentiles are interpolated between neighbouring members. ' +
+      'Snowfall is Open-Meteo\'s snowfall in cm, shown as mm like the forecast table (1 cm \u2248 1 mm). ' +
       'Data: Open-Meteo ensemble API.'
-    : accNote + 'Wind speed percentiles are not published either: the median is the speed of the median wind components, ' +
+    : accNote + 'Snowfall is in mm water equivalent. Wind speed percentiles are not published either: the median is the speed of the median wind components, ' +
       'and the shaded range is approximated from the 10th–90th percentile wind components.';
   container.appendChild(note);
 }
