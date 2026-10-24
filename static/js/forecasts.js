@@ -29,13 +29,13 @@ const MEMBER_ENSEMBLES = {
 const MODELS = {
   ifs: {
     label:    'IFS HRES',
-    desc:     'ECMWF IFS HRES · hourly up to 10 days · 9 km grid · updated every 6 h · global coverage',
+    desc:     'ECMWF IFS HRES · hourly up to 7 days · 9 km grid · updated every 6 h · global coverage',
     dataUrl:  'https://open-meteo.com/en/docs/ecmwf-api',
     hasCloudCover: true,
     isOpenMeteo:   true,
     openMeteoBase:  'https://api.open-meteo.com/v1/ecmwf',
     openMeteoModel: null,  // dedicated endpoint; no models= param needed
-    openMeteoDays:  10,
+    openMeteoDays:  7,
     runId:          'ecmwf_ifs',  // Open-Meteo data id, for the model run time
     creditHtml: '<a href="https://www.ecmwf.int/en/forecasts/datasets/open-data" target="_blank" rel="noopener">ECMWF IFS HRES</a> via <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a>',
   },
@@ -1876,7 +1876,7 @@ function renderEnsembleCharts(data) {
   grid.appendChild(makeEnsembleChart({
     title: 'Accumulated precipitation', unit: 'mm', times: data.times, ...tr,
     p10: accumulate(data.precip.p10), p50: accumulate(data.precip.p50), p90: accumulate(data.precip.p90),
-    color: '#64b5f6', bandFill: 'rgba(100,181,246,0.55)', bars: true,
+    color: '#64b5f6', bandFill: 'rgba(100,181,246,0.4)',
     yMin0: true, yMinSpan: 2, fmt: v => `${v.toFixed(1)} mm`, tickFmt: v => v.toFixed(1),
   }));
   // Snow charts only when snow is forecast, like the snow row in the table
@@ -1889,7 +1889,7 @@ function renderEnsembleCharts(data) {
     grid.appendChild(makeEnsembleChart({
       title: 'Accumulated snowfall', unit: 'mm', times: data.times, ...tr,
       p10: accumulate(data.snow.p10), p50: accumulate(data.snow.p50), p90: accumulate(data.snow.p90),
-      color: '#b3e5fc', bandFill: 'rgba(179,229,252,0.6)', bars: true,
+      color: '#b3e5fc', bandFill: 'rgba(179,229,252,0.4)',
       yMin0: true, yMinSpan: 2, fmt: v => `${v.toFixed(1)} mm`, tickFmt: v => v.toFixed(1),
     }));
   }
@@ -1897,9 +1897,9 @@ function renderEnsembleCharts(data) {
 
   const note = document.createElement('div');
   note.className = 'fc-hist-note';
-  const accNote = 'Accumulated precipitation and snowfall: bars sum the hourly median since the start of the chart, ' +
-    'error bars sum the hourly 10th and 90th percentiles. Only hourly percentiles are used, ' +
-    'so the error bars overstate the spread of the true accumulated total. ';
+  const accNote = 'Accumulated precipitation and snowfall: the line sums the hourly median since the start of the chart, ' +
+    'the shaded band sums the hourly 10th and 90th percentiles. Only hourly percentiles are used, ' +
+    'so the band overstates the spread of the true accumulated total. ';
   note.textContent = data.fromMembers
     ? accNote + 'Percentiles are computed in the browser from the individual ensemble members (control included), ' +
       'so with few members (ICON-CH1: 11) the 10th and 90th percentiles are interpolated between neighbouring members. ' +
@@ -1918,10 +1918,9 @@ function accumulate(arr) {
 
 /**
  * Ensemble percentile chart: shaded 10–90 % band, median line, "now" marker
- * and a hover/tap readout. With `bars`, draws median bars with 10–90 % error
- * bars instead.
+ * and a hover/tap readout.
  */
-function makeEnsembleChart({ title, unit, times, p10, p50, p90, color, bandFill, bars = false, yMin0 = false, yMinSpan = 0, yMax = null, transitionIndex = null, transitionLabel = '', fmt = v => v.toFixed(1), tickFmt = v => v }) {
+function makeEnsembleChart({ title, unit, times, p10, p50, p90, color, bandFill, yMin0 = false, yMinSpan = 0, yMax = null, transitionIndex = null, transitionLabel = '', fmt = v => v.toFixed(1), tickFmt = v => v }) {
   const W = 640, H = 170;
   const ML = 40, MR = 12, MT = 22, MB = 34;
   const CW = W - ML - MR, CH = H - MT - MB;
@@ -1942,10 +1941,9 @@ function makeEnsembleChart({ title, unit, times, p10, p50, p90, color, bandFill,
   let yHi = yMax !== null ? yMax : rawMax + span * 0.12;
   if (yHi - yLo < yMinSpan) yHi = yLo + yMinSpan;
 
-  // Lines run edge to edge; bars sit centred in one slot per hour
-  const step = bars ? CW / n : CW / (n - 1);
-  const xOf = i => ML + (bars ? (i + 0.5) * step : i * step);
-  const iOf = x => Math.round((x - ML) / step - (bars ? 0.5 : 0));
+  const step = CW / (n - 1);
+  const xOf = i => ML + i * step;
+  const iOf = x => Math.round((x - ML) / step);
   const yOf = v => MT + CH - ((Math.max(yLo, Math.min(yHi, v)) - yLo) / (yHi - yLo)) * CH;
 
   const svgNS = 'http://www.w3.org/2000/svg';
@@ -1980,10 +1978,8 @@ function makeEnsembleChart({ title, unit, times, p10, p50, p90, color, bandFill,
     const x = xOf(i);
     const dk = dayKey(times[i]);
     if (dk !== lastDK) {
-      // Bars: put the day boundary between slots rather than through a bar
-      const xd = bars ? x - step / 2 : x;
-      if (i > 0) svg.appendChild(el('line', { x1: xd, x2: xd, y1: MT, y2: MT + CH + 4, stroke: 'rgba(255,255,255,0.25)', 'stroke-width': '1' }));
-      dayLabels.push({ x: xd + 3, text: dk });
+      if (i > 0) svg.appendChild(el('line', { x1: x, x2: x, y1: MT, y2: MT + CH + 4, stroke: 'rgba(255,255,255,0.25)', 'stroke-width': '1' }));
+      dayLabels.push({ x: x + 3, text: dk });
       lastDK = dk;
     }
     const h = getH(times[i]);
@@ -2004,27 +2000,8 @@ function makeEnsembleChart({ title, unit, times, p10, p50, p90, color, bandFill,
     }, d.text));
   });
 
-  if (bars) {
-    // Median bars, 10–90 % whiskers with caps
-    const bw = step * 0.72, cap = Math.max(2, step * 0.4);
-    for (let i = 0; i < n; i++) {
-      const x = xOf(i);
-      if (ok(p50[i]) && p50[i] > 0) {
-        const y = yOf(p50[i]);
-        svg.appendChild(el('rect', { x: x - bw / 2, y, width: bw, height: MT + CH - y, fill: bandFill }));
-      }
-      if (ok(p10[i]) && ok(p90[i]) && p90[i] > p10[i]) {
-        const y1 = yOf(p10[i]), y2 = yOf(p90[i]);
-        svg.appendChild(el('path', {
-          d: `M ${x},${y1} L ${x},${y2} M ${x - cap / 2},${y1} L ${x + cap / 2},${y1} M ${x - cap / 2},${y2} L ${x + cap / 2},${y2}`,
-          fill: 'none', stroke: color, 'stroke-width': '1',
-        }));
-      }
-    }
-  }
-
   // Band, percentile edges, median
-  const idx = bars ? [] : times.map((_, i) => i).filter(i => ok(p10[i]) && ok(p90[i]));
+  const idx = times.map((_, i) => i).filter(i => ok(p10[i]) && ok(p90[i]));
   const pts = arr => idx.map(i => `${xOf(i).toFixed(1)},${yOf(arr[i]).toFixed(1)}`);
   if (idx.length) {
     const hi = pts(p90), lo = pts(p10);
@@ -2033,7 +2010,7 @@ function makeEnsembleChart({ title, unit, times, p10, p50, p90, color, bandFill,
       svg.appendChild(el('path', { d: `M ${pts(arr).join(' L ')}`, fill: 'none', stroke: color, 'stroke-width': '1', 'stroke-opacity': '0.55' }));
     }
   }
-  const medIdx = bars ? [] : times.map((_, i) => i).filter(i => ok(p50[i]));
+  const medIdx = times.map((_, i) => i).filter(i => ok(p50[i]));
   if (medIdx.length) {
     svg.appendChild(el('path', {
       d: 'M ' + medIdx.map(i => `${xOf(i).toFixed(1)},${yOf(p50[i]).toFixed(1)}`).join(' L '),
@@ -2043,7 +2020,7 @@ function makeEnsembleChart({ title, unit, times, p10, p50, p90, color, bandFill,
 
   // Model switch (e.g. ICON-CH1 → CH2)
   if (transitionIndex != null && transitionIndex > 0 && transitionIndex < n) {
-    const x = bars ? xOf(transitionIndex) - step / 2 : xOf(transitionIndex);
+    const x = xOf(transitionIndex);
     svg.appendChild(el('line', { x1: x, x2: x, y1: MT, y2: MT + CH, stroke: '#ffb74d', 'stroke-width': '1', 'stroke-dasharray': '4,3' }));
     svg.appendChild(el('text', { x: x + 3, y: MT + CH - 4, fill: '#ffb74d', 'font-size': '9.5', 'font-family': 'inherit' }, `→ ${transitionLabel}`));
   }
