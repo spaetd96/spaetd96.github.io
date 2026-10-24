@@ -1226,7 +1226,7 @@ html, body {
   align-items: stretch;
   width: max-content;
   transform: translate(-50%, -50%);
-  background: rgba(38, 56, 66, 0.92);
+  background: rgba(38, 56, 66, 0.7);
   color: #fff;
   border-radius: 3px;
   box-shadow: 0 1px 5px rgba(0,0,0,0.4);
@@ -1244,7 +1244,7 @@ html, body {
   border-left: 1px solid rgba(255,255,255,0.25);
   text-align: center;
 }
-.fc-city-temps i { font-style: normal; opacity: 0.7; }
+.fc-city-temps i { font-style: normal; opacity: 0.85; }
 @media (max-width: 640px) {
   .fc-city { font-size: 0.64rem; }
   .fc-city-icon { display: none; }
