@@ -8,16 +8,17 @@ const OPENMETEO_BASE = 'https://api.open-meteo.com/v1/forecast';
 const OPENMETEO_ENSEMBLE_BASE = 'https://ensemble-api.open-meteo.com/v1/ensemble';
 const OPENMETEO_DATA_BASE = 'https://api.open-meteo.com/data';
 const OPENMETEO_ENSEMBLE_DATA_BASE = 'https://ensemble-api.open-meteo.com/data';
-const ENSEMBLE_HOURS = 120;  // member ensembles are shown 5 days ahead, like the deterministic views
 
 // Member ensembles via Open-Meteo; ICON-CH uses CH1 first, then CH2 (stitched like the deterministic view)
 const MEMBER_ENSEMBLES = {
   ifs: {
     label: 'IFS ENS',
-    parts: [{ model: 'ecmwf_ifs025', runId: 'ecmwf_ifs025_ensemble', days: 6, label: 'IFS ENS', note: '51 members, 0.25° grid' }],
+    hours: 168,
+    parts: [{ model: 'ecmwf_ifs025', runId: 'ecmwf_ifs025_ensemble', days: 8, label: 'IFS ENS', note: '51 members, 0.25° grid' }],
   },
   icon_ch: {
     label: 'ICON-CH-EPS',
+    hours: 120,
     parts: [
       { model: 'meteoswiss_icon_ch1', runId: 'meteoswiss_icon_ch1_ensemble', days: 3, label: 'ICON-CH1-EPS', note: '11 members, 1 km' },
       { model: 'meteoswiss_icon_ch2', runId: 'meteoswiss_icon_ch2_ensemble', days: 6, label: 'ICON-CH2-EPS', note: '21 members, 2 km' },
@@ -1005,7 +1006,7 @@ async function fetchMemberEnsemble(lat, lng, cfg) {
 
   // Each part is used while it has data; later parts fill in after the previous one ends
   const startMs = new Date().setMinutes(0, 0, 0);
-  const endMs = startMs + ENSEMBLE_HOURS * 3.6e6;
+  const endMs = startMs + cfg.hours * 3.6e6;
   const empty = () => ({ p10: [], p50: [], p90: [] });
   const out = { isEnsemble: true, times: [], refTime: null, temp: empty(), precip: empty(), snow: empty(), wind: empty(), gust: empty(), cloud: empty() };
   let coveredUntil = startMs - 1;
@@ -1121,7 +1122,7 @@ async function fetchCompareData(lat, lng) {
 
   // IFS — use the dedicated /v1/ecmwf endpoint for correct IFS HRES 9 km data
   const ifsUrl = `https://api.open-meteo.com/v1/ecmwf?latitude=${lat.toFixed(4)}&longitude=${lng.toFixed(4)}` +
-    `&hourly=${omParams}&forecast_days=5&wind_speed_unit=ms&timezone=UTC`;
+    `&hourly=${omParams}&forecast_days=7&wind_speed_unit=ms&timezone=UTC`;
 
   // C-LAEF AlpeAdria (GeoSphere direct) — include snow so the compare table includes its snow row
   const claefUrl = `${API_BASE}/timeseries/forecast/${MODELS.claef.resource}` +
