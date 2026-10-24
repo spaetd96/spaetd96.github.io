@@ -2161,7 +2161,7 @@ function hideStationMarkers() {
 
 const OVERVIEW_CITIES = [
   // Austrian state capitals
-  { name: 'Wien', lat: 48.21, lon: 16.37 },
+  { name: 'Vienna', lat: 48.21, lon: 16.37 },
   { name: 'Graz', lat: 47.07, lon: 15.44 },
   { name: 'Linz', lat: 48.31, lon: 14.29 },
   { name: 'Salzburg', lat: 47.80, lon: 13.04 },
@@ -2171,19 +2171,19 @@ const OVERVIEW_CITIES = [
   { name: 'St. Pölten', lat: 48.20, lon: 15.63 },
   { name: 'Eisenstadt', lat: 47.85, lon: 16.52 },
   // Neighbouring countries
-  { name: 'München', lat: 48.14, lon: 11.58 },
-  { name: 'Nürnberg', lat: 49.45, lon: 11.08 },
-  { name: 'Praha', lat: 50.08, lon: 14.44 },
+  { name: 'Munich', lat: 48.14, lon: 11.58 },
+  { name: 'Nuremberg', lat: 49.45, lon: 11.08 },
+  { name: 'Prague', lat: 50.08, lon: 14.44 },
   { name: 'Brno', lat: 49.20, lon: 16.61 },
   { name: 'Bratislava', lat: 48.15, lon: 17.11 },
   { name: 'Budapest', lat: 47.50, lon: 19.04 },
   { name: 'Ljubljana', lat: 46.05, lon: 14.51 },
   { name: 'Zagreb', lat: 45.81, lon: 15.98 },
-  { name: 'Zürich', lat: 47.38, lon: 8.54 },
+  { name: 'Zurich', lat: 47.38, lon: 8.54 },
   { name: 'Bern', lat: 46.95, lon: 7.45 },
   { name: 'Bolzano', lat: 46.50, lon: 11.35 },
-  { name: 'Venezia', lat: 45.44, lon: 12.32 },
-  { name: 'Milano', lat: 45.46, lon: 9.19 },
+  { name: 'Venice', lat: 45.44, lon: 12.32 },
+  { name: 'Milan', lat: 45.46, lon: 9.19 },
   { name: 'Trento', lat: 46.07, lon: 11.12 },
   { name: 'Trieste', lat: 45.65, lon: 13.78 },
 ];
