@@ -1922,6 +1922,7 @@ function makeEnsembleChart({ title, unit, times, p10, p50, p90, color, bandFill,
   const tzOpt = displayTZ === 'UTC' ? 'UTC' : undefined;
   const getH  = d => displayTZ === 'UTC' ? d.getUTCHours() : d.getHours();
   const dayKey = d => d.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short', timeZone: tzOpt });
+  const dayLabels = [];
   let lastDK = null;
   for (let i = 0; i < n; i++) {
     const x = xOf(i);
@@ -1930,9 +1931,7 @@ function makeEnsembleChart({ title, unit, times, p10, p50, p90, color, bandFill,
       // Bars: put the day boundary between slots rather than through a bar
       const xd = bars ? x - step / 2 : x;
       if (i > 0) svg.appendChild(el('line', { x1: xd, x2: xd, y1: MT, y2: MT + CH + 4, stroke: 'rgba(255,255,255,0.25)', 'stroke-width': '1' }));
-      svg.appendChild(el('text', {
-        x: xd + 3, y: MT + CH + 28, fill: '#bdbdbd', 'font-size': '10', 'font-family': 'inherit', 'font-weight': '600',
-      }, dk));
+      dayLabels.push({ x: xd + 3, text: dk });
       lastDK = dk;
     }
     const h = getH(times[i]);
@@ -1942,6 +1941,16 @@ function makeEnsembleChart({ title, unit, times, p10, p50, p90, color, bandFill,
       }, String(h).padStart(2, '0')));
     }
   }
+
+  // Skip a day label when the next day starts too close for it to fit (a short first day)
+  const dayLabelW = 68;
+  dayLabels.forEach((d, k) => {
+    const next = dayLabels[k + 1];
+    if (next && next.x - d.x < dayLabelW) return;
+    svg.appendChild(el('text', {
+      x: d.x, y: MT + CH + 28, fill: '#bdbdbd', 'font-size': '10', 'font-family': 'inherit', 'font-weight': '600',
+    }, d.text));
+  });
 
   if (bars) {
     // Median bars, 10–90 % whiskers with caps
