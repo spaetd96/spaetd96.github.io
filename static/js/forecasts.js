@@ -5,6 +5,23 @@
 
 const API_BASE = 'https://dataset.api.hub.geosphere.at/v1';
 const OPENMETEO_BASE = 'https://api.open-meteo.com/v1/forecast';
+const OPENMETEO_ENSEMBLE_BASE = 'https://ensemble-api.open-meteo.com/v1/ensemble';
+const ENSEMBLE_HOURS = 120;  // member ensembles are shown 5 days ahead, like the deterministic views
+
+// Member ensembles via Open-Meteo; ICON-CH uses CH1 first, then CH2 (stitched like the deterministic view)
+const MEMBER_ENSEMBLES = {
+  ifs: {
+    label: 'IFS ENS',
+    parts: [{ model: 'ecmwf_ifs025', days: 6, label: 'IFS ENS', note: '51 members, 0.25° grid' }],
+  },
+  icon_ch: {
+    label: 'ICON-CH-EPS',
+    parts: [
+      { model: 'meteoswiss_icon_ch1', days: 3, label: 'ICON-CH1-EPS', note: '11 members, 1 km' },
+      { model: 'meteoswiss_icon_ch2', days: 6, label: 'ICON-CH2-EPS', note: '21 members, 2 km' },
+    ],
+  },
+};
 
 const MODELS = {
   ifs: {
@@ -732,7 +749,6 @@ async function fetchAndShowForecast(lat, lng) {
   const loading = document.getElementById('fc-forecast-loading');
   const scroll         = document.getElementById('fc-forecast-scroll');
   const ensembleScroll = document.getElementById('fc-ensemble-scroll');
-  const ensembleBtnWrap = document.getElementById('fc-ensemble-btn-wrap');
   const compareScroll  = document.getElementById('fc-compare-scroll');
   const stationDataEl  = document.getElementById('fc-station-data');
 
@@ -783,6 +799,7 @@ async function fetchAndShowForecast(lat, lng) {
       renderForecastTable(lastForecastData);
       loading.classList.add('hidden');
       addClimateContext(lat, lng, lastForecastData);
+      offerEnsemble(lat, lng);
       return;
     }
 
@@ -824,12 +841,7 @@ async function fetchAndShowForecast(lat, lng) {
     // Climate context makes little sense for the 3 h nowcast
     if (!m.isEnsemble && currentModel !== 'inca') addClimateContext(lat, lng, lastForecastData);
 
-    // Show ensemble button only for C-LAEF AlpeAdria
-    if (currentModel === 'claef') {
-      ensembleBtnWrap.classList.remove('hidden');
-      updateEnsembleButton('closed');
-      if (ensembleWanted) showEnsemble(lat, lng);
-    }
+    offerEnsemble(lat, lng);
 
     if (currentModel === 'inca') {
       fetchAndShowNearestStation(lat, lng);
@@ -848,7 +860,7 @@ async function fetchAndShowForecast(lat, lng) {
   }
 }
 
-// ── Fetch + show C-LAEF AlpeAdria ensemble (button-triggered) ────────────────
+// ── Fetch + show ensemble (button-triggered) ────────────────
 
 function updateEnsembleButton(state) {
   const btn = document.getElementById('fc-ensemble-btn');
@@ -869,19 +881,24 @@ function hideEnsemble() {
   updateEnsembleButton('closed');
 }
 
-/** Show the C-LAEF ensemble percentiles under the forecast table (cached per point). */
+/** Show the ensemble percentiles under the forecast table (cached per model and point). */
 async function showEnsemble(lat, lng) {
-  const key = `${lat.toFixed(4)},${lng.toFixed(4)}`;
+  const model = currentModel;
+  const key = `${model}|${lat.toFixed(4)},${lng.toFixed(4)}`;
   const req = ++ensembleReq;
   let data = ensembleCache?.key === key ? ensembleCache.data : null;
 
   if (!data) {
     updateEnsembleButton('loading');
-    const em = MODELS.ensemble;
-    const url = `${API_BASE}/timeseries/forecast/${em.resource}` +
-                `?lat_lon=${lat.toFixed(4)},${lng.toFixed(4)}&parameters=${em.params}`;
     try {
-      data = processEnsembleTimeseries(await fetchJSON(url));
+      if (MEMBER_ENSEMBLES[model]) {
+        data = await fetchMemberEnsemble(lat, lng, MEMBER_ENSEMBLES[model]);
+      } else {
+        const em = MODELS.ensemble;
+        const url = `${API_BASE}/timeseries/forecast/${em.resource}` +
+                    `?lat_lon=${lat.toFixed(4)},${lng.toFixed(4)}&parameters=${em.params}`;
+        data = processEnsembleTimeseries(await fetchJSON(url));
+      }
       ensembleCache = { key, data };
     } catch (err) {
       console.error('Ensemble fetch error:', err);
@@ -889,12 +906,99 @@ async function showEnsemble(lat, lng) {
       return;
     }
   }
-  if (req !== ensembleReq || currentModel !== 'claef') return;
+  if (req !== ensembleReq || currentModel !== model) return;
 
   document.getElementById('fc-forecast-panel').classList.add('fc-panel-ensemble');
   document.getElementById('fc-ensemble-scroll').classList.remove('hidden');
   renderEnsembleCharts(data);
   updateEnsembleButton('open');
+}
+
+/** Offer the ensemble button for models that have one, and reopen it if the user had it open. */
+function offerEnsemble(lat, lng) {
+  if (currentModel !== 'claef' && !MEMBER_ENSEMBLES[currentModel]) return;
+  document.getElementById('fc-ensemble-btn-wrap').classList.remove('hidden');
+  updateEnsembleButton('closed');
+  if (ensembleWanted) showEnsemble(lat, lng);
+}
+
+// ── Member ensembles (IFS ENS, ICON-CH-EPS) ──────────────────────────────────
+
+/** Linear-interpolated percentile (p in 0–1) of an ascending-sorted array. */
+function percentile(sorted, p) {
+  const pos = (sorted.length - 1) * p;
+  const lo = Math.floor(pos), hi = Math.ceil(pos);
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
+}
+
+/** Per-hour 10th/50th/90th percentile of one variable across the control and all members. */
+function memberPercentiles(hourly, variable) {
+  const series = Object.keys(hourly)
+    .filter(k => k === variable || k.startsWith(`${variable}_member`))
+    .map(k => hourly[k]);
+  const out = { p10: [], p50: [], p90: [] };
+  for (let i = 0; i < hourly.time.length; i++) {
+    const vals = series.map(s => s[i]);
+    // A step is only usable when every member has a value, so the percentiles stay comparable
+    if (!series.length || vals.some(v => v === null || v === undefined || !isFinite(v))) {
+      out.p10.push(null); out.p50.push(null); out.p90.push(null);
+      continue;
+    }
+    vals.sort((a, b) => a - b);
+    out.p10.push(percentile(vals, 0.1));
+    out.p50.push(percentile(vals, 0.5));
+    out.p90.push(percentile(vals, 0.9));
+  }
+  return out;
+}
+
+const ENSEMBLE_VARS = { temp: 'temperature_2m', precip: 'precipitation', wind: 'wind_speed_10m', gust: 'wind_gusts_10m', cloud: 'cloud_cover' };
+
+async function fetchMemberEnsemble(lat, lng, cfg) {
+  const vars = Object.values(ENSEMBLE_VARS).join(',');
+  const jsons = await Promise.all(cfg.parts.map(part => fetchJSON(
+    `${OPENMETEO_ENSEMBLE_BASE}?latitude=${lat.toFixed(4)}&longitude=${lng.toFixed(4)}` +
+    `&hourly=${vars}&models=${part.model}&forecast_days=${part.days}&wind_speed_unit=ms&timezone=UTC`
+  )));
+
+  // Percentiles per part, keyed by timestamp so the parts can be stitched
+  const parts = jsons.map(json => {
+    const h = json.hourly;
+    const stats = {};
+    for (const [name, variable] of Object.entries(ENSEMBLE_VARS)) stats[name] = memberPercentiles(h, variable);
+    return { times: h.time.map(t => new Date(t + 'Z')), stats };
+  });
+
+  // Each part is used while it has data; later parts fill in after the previous one ends
+  const startMs = new Date().setMinutes(0, 0, 0);
+  const endMs = startMs + ENSEMBLE_HOURS * 3.6e6;
+  const empty = () => ({ p10: [], p50: [], p90: [] });
+  const out = { isEnsemble: true, times: [], refTime: null, temp: empty(), precip: empty(), wind: empty(), gust: empty(), cloud: empty() };
+  let coveredUntil = startMs - 1;
+  let transitionIndex = null;
+  parts.forEach((part, pi) => {
+    let lastValid = -1;
+    part.times.forEach((t, i) => { if (part.stats.temp.p50[i] !== null) lastValid = i; });
+    if (pi > 0 && transitionIndex === null) transitionIndex = out.times.length;
+    for (let i = 0; i <= lastValid; i++) {
+      const ms = part.times[i].getTime();
+      if (ms <= coveredUntil || ms >= endMs) continue;
+      out.times.push(part.times[i]);
+      for (const name of Object.keys(ENSEMBLE_VARS)) {
+        for (const q of ['p10', 'p50', 'p90']) out[name][q].push(part.stats[name][q][i]);
+      }
+    }
+    if (out.times.length) coveredUntil = out.times[out.times.length - 1].getTime();
+  });
+  if (!out.times.length) throw new Error('No ensemble data');
+
+  // Only mark a switch if a later part actually contributed steps
+  out.transitionIndex = transitionIndex !== null && transitionIndex < out.times.length ? transitionIndex : null;
+  out.transitionLabel = out.transitionIndex !== null ? cfg.parts[1].label : null;
+  out.label = `${cfg.label} ensemble`;
+  out.membersText = cfg.parts.map(p => `${p.label}: ${p.note}`).join(' → ');
+  out.fromMembers = true;
+  return out;
 }
 
 // ── Fetch merged ICON-CH1 + CH2 ─────────────────────────────────────────────
@@ -1618,6 +1722,7 @@ function processEnsembleTimeseries(json) {
   const triple = name => ({ p10: col(`${name}_p10`), p50: col(`${name}_p50`), p90: col(`${name}_p90`) });
   return {
     isEnsemble: true,
+    label:   'C-LAEF AlpeAdria ensemble',
     times:   json.timestamps.map(t => new Date(t)),
     refTime: json.reference_time ? new Date(json.reference_time) : null,
     temp:    triple('2t'),
@@ -1660,47 +1765,49 @@ function renderEnsembleCharts(data) {
   head.className = 'fc-ens-head';
   const run = modelRunText(data.refTime);
   head.innerHTML =
-    `<h3 class="fc-section-heading">C-LAEF AlpeAdria ensemble</h3>` +
+    `<h3 class="fc-section-heading">${data.label}</h3>` +
     `<div class="fc-ens-legend">` +
     `<span class="fc-ens-key"><span class="fc-ens-swatch-line"></span>median</span>` +
     `<span class="fc-ens-key"><span class="fc-ens-swatch-band"></span>80% of members (10th–90th percentile)</span>` +
+    (data.membersText ? `<span class="fc-ens-key">${data.membersText}</span>` : '') +
     (run ? `<span class="fc-ens-key">${run}</span>` : '') +
     `<span class="fc-ens-key fc-ens-hint">Hover or tap a chart for values</span>` +
     `</div>`;
   container.appendChild(head);
 
   const toWind = arr => arr.map(windToUnit);
+  const tr = { transitionIndex: data.transitionIndex ?? null, transitionLabel: data.transitionLabel };
   const grid = document.createElement('div');
   grid.className = 'fc-chart-grid';
   grid.appendChild(makeEnsembleChart({
-    title: 'Temperature', unit: '°C', times: data.times, ...data.temp,
+    title: 'Temperature', unit: '°C', times: data.times, ...data.temp, ...tr,
     color: '#ef9a9a', bandFill: 'rgba(239,154,154,0.38)',
     fmt: v => `${v.toFixed(1)}°`, tickFmt: v => `${Math.round(v)}°`,
   }));
   grid.appendChild(makeEnsembleChart({
-    title: 'Cloud cover', unit: '%', times: data.times, ...data.cloud,
+    title: 'Cloud cover', unit: '%', times: data.times, ...data.cloud, ...tr,
     color: '#cfd8dc', bandFill: 'rgba(176,190,197,0.32)',
     yMin0: true, yMax: 100, fmt: v => `${Math.round(v)}%`, tickFmt: v => Math.round(v),
   }));
   grid.appendChild(makeEnsembleChart({
-    title: 'Wind speed', unit: windUnitLabel(), times: data.times,
+    title: 'Wind speed', unit: windUnitLabel(), times: data.times, ...tr,
     p10: toWind(data.wind.p10), p50: toWind(data.wind.p50), p90: toWind(data.wind.p90),
     color: '#ce93d8', bandFill: 'rgba(206,147,216,0.35)',
     yMin0: true, yMinSpan: 5, fmt: v => `${Math.round(v)} ${windUnitLabel()}`, tickFmt: v => Math.round(v),
   }));
   grid.appendChild(makeEnsembleChart({
-    title: 'Wind gusts', unit: windUnitLabel(), times: data.times,
+    title: 'Wind gusts', unit: windUnitLabel(), times: data.times, ...tr,
     p10: toWind(data.gust.p10), p50: toWind(data.gust.p50), p90: toWind(data.gust.p90),
     color: '#ffb74d', bandFill: 'rgba(255,183,77,0.35)',
     yMin0: true, yMinSpan: 5, fmt: v => `${Math.round(v)} ${windUnitLabel()}`, tickFmt: v => Math.round(v),
   }));
   grid.appendChild(makeEnsembleChart({
-    title: 'Precipitation', unit: 'mm/h', times: data.times, ...data.precip,
+    title: 'Precipitation', unit: 'mm/h', times: data.times, ...data.precip, ...tr,
     color: '#64b5f6', bandFill: 'rgba(100,181,246,0.4)',
     yMin0: true, yMinSpan: 1, fmt: v => `${v.toFixed(1)} mm`, tickFmt: v => v.toFixed(1),
   }));
   grid.appendChild(makeEnsembleChart({
-    title: 'Accumulated precipitation', unit: 'mm', times: data.times,
+    title: 'Accumulated precipitation', unit: 'mm', times: data.times, ...tr,
     p10: accumulate(data.precip.p10), p50: accumulate(data.precip.p50), p90: accumulate(data.precip.p90),
     color: '#64b5f6', bandFill: 'rgba(100,181,246,0.55)', bars: true,
     yMin0: true, yMinSpan: 2, fmt: v => `${v.toFixed(1)} mm`, tickFmt: v => v.toFixed(1),
@@ -1709,11 +1816,15 @@ function renderEnsembleCharts(data) {
 
   const note = document.createElement('div');
   note.className = 'fc-hist-note';
-  note.textContent = 'Accumulated precipitation: bars sum the hourly median since the start of the run, ' +
-    'error bars sum the hourly 10th and 90th percentiles. Only hourly percentiles are published, ' +
-    'so the error bars overstate the spread of the true accumulated total. ' +
-    'Wind speed percentiles are not published either: the median is the speed of the median wind components, ' +
-    'and the shaded range is approximated from the 10th–90th percentile wind components.';
+  const accNote = 'Accumulated precipitation: bars sum the hourly median since the start of the chart, ' +
+    'error bars sum the hourly 10th and 90th percentiles. Only hourly percentiles are used, ' +
+    'so the error bars overstate the spread of the true accumulated total. ';
+  note.textContent = data.fromMembers
+    ? accNote + 'Percentiles are computed in the browser from the individual ensemble members (control included), ' +
+      'so with few members (ICON-CH1: 11) the 10th and 90th percentiles are interpolated between neighbouring members. ' +
+      'Data: Open-Meteo ensemble API.'
+    : accNote + 'Wind speed percentiles are not published either: the median is the speed of the median wind components, ' +
+      'and the shaded range is approximated from the 10th–90th percentile wind components.';
   container.appendChild(note);
 }
 
@@ -1728,7 +1839,7 @@ function accumulate(arr) {
  * and a hover/tap readout. With `bars`, draws median bars with 10–90 % error
  * bars instead.
  */
-function makeEnsembleChart({ title, unit, times, p10, p50, p90, color, bandFill, bars = false, yMin0 = false, yMinSpan = 0, yMax = null, fmt = v => v.toFixed(1), tickFmt = v => v }) {
+function makeEnsembleChart({ title, unit, times, p10, p50, p90, color, bandFill, bars = false, yMin0 = false, yMinSpan = 0, yMax = null, transitionIndex = null, transitionLabel = '', fmt = v => v.toFixed(1), tickFmt = v => v }) {
   const W = 640, H = 170;
   const ML = 40, MR = 12, MT = 22, MB = 34;
   const CW = W - ML - MR, CH = H - MT - MB;
@@ -1837,6 +1948,13 @@ function makeEnsembleChart({ title, unit, times, p10, p50, p90, color, bandFill,
       d: 'M ' + medIdx.map(i => `${xOf(i).toFixed(1)},${yOf(p50[i]).toFixed(1)}`).join(' L '),
       fill: 'none', stroke: color, 'stroke-width': '2.4', 'stroke-linejoin': 'round', 'stroke-linecap': 'round',
     }));
+  }
+
+  // Model switch (e.g. ICON-CH1 → CH2)
+  if (transitionIndex != null && transitionIndex > 0 && transitionIndex < n) {
+    const x = bars ? xOf(transitionIndex) - step / 2 : xOf(transitionIndex);
+    svg.appendChild(el('line', { x1: x, x2: x, y1: MT, y2: MT + CH, stroke: '#ffb74d', 'stroke-width': '1', 'stroke-dasharray': '4,3' }));
+    svg.appendChild(el('text', { x: x + 3, y: MT + CH - 4, fill: '#ffb74d', 'font-size': '9.5', 'font-family': 'inherit' }, `→ ${transitionLabel}`));
   }
 
   // "Now" marker
