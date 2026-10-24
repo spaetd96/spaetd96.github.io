@@ -191,13 +191,16 @@ const WIND_STOPS = [
 
 // ── State ────────────────────────────────────────────────────────────────────
 
-let map, pinMarker = null, currentModel = 'stations', windUnit = 'kmh', displayTZ = 'local';
+let map, pinMarker = null, currentModel = 'claef', windUnit = 'kmh', displayTZ = 'local';
 let lastForecastData = null;
 let lastHistData = null;
 let stationMeta = null;
 let siagStations = null;
 let trentinoStations = null;
 let stationMarkerLayer = null;
+let cityLayer = null;
+let cityOverview = null;     // fetched once: [{ city, tmax, tmin, icon }]
+let cityReq = 0;             // invalidates in-flight city requests
 let nearestStationMarker = null;
 let selectedStationMarker = null;
 let lastNearestStation = null;
@@ -224,6 +227,8 @@ document.addEventListener('DOMContentLoaded', () => {
   initLocate();
   if (hash.latLng || hash.zoom != null) {
     map.setView(hash.latLng || map.getCenter(), hash.zoom ?? map.getZoom());
+  } else {
+    fitFullExtent();
   }
   selectedLatLng = hash.latLng;
   setModel(hash.model || currentModel);
@@ -248,10 +253,17 @@ function initMap() {
   }).addTo(map);
 
   stationMarkerLayer = L.layerGroup().addTo(map);
+  cityLayer = L.layerGroup().addTo(map);
 
   map.on('click', onMapClick);
   map.on('moveend', writeHash);
   map.on('dragstart', () => setInfoOpen(false));
+}
+
+/** Zoom out as far as the map bounds allow (the initial view). */
+function fitFullExtent() {
+  map.setMinZoom(Math.min(MAP_MIN_ZOOM, map.getBoundsZoom(MAP_BOUNDS)));
+  map.fitBounds(MAP_BOUNDS, { animate: false });
 }
 
 function initControls() {
@@ -338,7 +350,7 @@ function groupOf(key) {
 
 /** Switch to a model: update tabs/chips, info box, map state and URL. */
 function setModel(key) {
-  if (!SELECTABLE_MODELS.includes(key)) key = 'stations';
+  if (!SELECTABLE_MODELS.includes(key)) key = 'claef';
   currentModel = key;
   lastModelInGroup[groupOf(key)] = key;
   renderModelTabs();
@@ -420,10 +432,12 @@ function applyModelSelectionState() {
       hint.classList.remove('hidden');
       document.getElementById('fc-forecast-panel').classList.add('hidden');
     }
+    hideCityOverview();
     return;
   }
 
   hideStationMarkers();
+  if (currentModel === 'claef') showCityOverview(); else hideCityOverview();
   if (selectedLatLng) {
     placePin(selectedLatLng.lat, selectedLatLng.lng);
     hint.classList.add('hidden');
@@ -2140,6 +2154,90 @@ async function showStationMarkers() {
 function hideStationMarkers() {
   stationMarkerLayer.clearLayers();
   if (selectedStationMarker) { selectedStationMarker = null; }
+}
+
+// ── City overview (C-LAEF daily min/max on the map) ──────────────────────────
+
+const OVERVIEW_CITIES = [
+  // Austrian state capitals
+  { name: 'Wien', lat: 48.21, lon: 16.37 },
+  { name: 'Graz', lat: 47.07, lon: 15.44 },
+  { name: 'Linz', lat: 48.31, lon: 14.29 },
+  { name: 'Salzburg', lat: 47.80, lon: 13.04 },
+  { name: 'Innsbruck', lat: 47.27, lon: 11.39 },
+  { name: 'Bregenz', lat: 47.50, lon: 9.75 },
+  { name: 'Klagenfurt', lat: 46.62, lon: 14.31 },
+  { name: 'St. Pölten', lat: 48.20, lon: 15.63 },
+  { name: 'Eisenstadt', lat: 47.85, lon: 16.52 },
+  // Neighbouring countries
+  { name: 'München', lat: 48.14, lon: 11.58 },
+  { name: 'Nürnberg', lat: 49.45, lon: 11.08 },
+  { name: 'Praha', lat: 50.08, lon: 14.44 },
+  { name: 'Brno', lat: 49.20, lon: 16.61 },
+  { name: 'Bratislava', lat: 48.15, lon: 17.11 },
+  { name: 'Budapest', lat: 47.50, lon: 19.04 },
+  { name: 'Ljubljana', lat: 46.05, lon: 14.51 },
+  { name: 'Zagreb', lat: 45.81, lon: 15.98 },
+  { name: 'Zürich', lat: 47.38, lon: 8.54 },
+  { name: 'Bern', lat: 46.95, lon: 7.45 },
+  { name: 'Bolzano', lat: 46.50, lon: 11.35 },
+  { name: 'Venezia', lat: 45.44, lon: 12.32 },
+  { name: 'Milano', lat: 45.46, lon: 9.19 },
+];
+
+/** Fetch the C-LAEF forecast for all cities in one request and reduce it to one day. */
+async function loadCityOverview() {
+  const pts = OVERVIEW_CITIES.map(c => `lat_lon=${c.lat},${c.lon}`).join('&');
+  const json = await fetchJSON(`${API_BASE}/timeseries/forecast/${MODELS.claef.resource}` +
+    `?${pts}&parameters=2t,rain,sf,tcc`);
+  const times = json.timestamps.map(t => new Date(t));
+  const dayKey = d => d.toLocaleDateString('en-CA', { timeZone: 'Europe/Vienna' });
+  const hourOf = d => +d.toLocaleString('en-GB', { hour: '2-digit', hour12: false, timeZone: 'Europe/Vienna' });
+  // Today, or tomorrow once less than 6 hourly steps of today remain
+  let day = dayKey(times[0]);
+  if (times.filter(t => dayKey(t) === day).length < 6) day = dayKey(times.find(t => dayKey(t) !== day));
+  const idx = times.map((t, i) => (dayKey(t) === day ? i : -1)).filter(i => i >= 0);
+
+  return OVERVIEW_CITIES.map((city, n) => {
+    const p = json.features[n].properties.parameters;
+    const at = f => idx.map(i => p[f].data[i]).filter(Number.isFinite);
+    const temps = at('2t');
+    const dayIdx = idx.filter(i => hourOf(times[i]) >= 6 && hourOf(times[i]) < 21);
+    const use = dayIdx.length ? dayIdx : idx;
+    const avg = f => use.reduce((a, i) => a + p[f].data[i], 0) / use.length;
+    const max = f => Math.max(...use.map(i => p[f].data[i]));
+    return {
+      city,
+      tmax: Math.max(...temps),
+      tmin: Math.min(...temps),
+      icon: weatherIcon(avg('tcc') / 100, max('rain'), 12, max('sf')),
+    };
+  });
+}
+
+async function showCityOverview() {
+  const req = ++cityReq;
+  try {
+    if (!cityOverview) cityOverview = await loadCityOverview();
+  } catch (err) {
+    return;  // overview is optional; the map still works without it
+  }
+  if (req !== cityReq || currentModel !== 'claef') return;
+  cityLayer.clearLayers();
+  for (const { city, tmax, tmin, icon } of cityOverview) {
+    const html = `<span class="fc-city-icon">${icon}</span>` +
+      `<span class="fc-city-name">${city.name}</span>` +
+      `<span class="fc-city-temps"><b>${Math.round(tmax)}°</b><i>${Math.round(tmin)}°</i></span>`;
+    L.marker([city.lat, city.lon], {
+      icon: L.divIcon({ className: 'fc-city', html, iconSize: null }),
+      keyboard: false,
+    }).on('click', () => selectLocation(city.lat, city.lon, { label: city.name })).addTo(cityLayer);
+  }
+}
+
+function hideCityOverview() {
+  cityReq++;
+  if (cityLayer) cityLayer.clearLayers();
 }
 
 async function onStationClick(station, marker) {
