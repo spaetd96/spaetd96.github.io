@@ -6,19 +6,21 @@
 const API_BASE = 'https://dataset.api.hub.geosphere.at/v1';
 const OPENMETEO_BASE = 'https://api.open-meteo.com/v1/forecast';
 const OPENMETEO_ENSEMBLE_BASE = 'https://ensemble-api.open-meteo.com/v1/ensemble';
+const OPENMETEO_DATA_BASE = 'https://api.open-meteo.com/data';
+const OPENMETEO_ENSEMBLE_DATA_BASE = 'https://ensemble-api.open-meteo.com/data';
 const ENSEMBLE_HOURS = 120;  // member ensembles are shown 5 days ahead, like the deterministic views
 
 // Member ensembles via Open-Meteo; ICON-CH uses CH1 first, then CH2 (stitched like the deterministic view)
 const MEMBER_ENSEMBLES = {
   ifs: {
     label: 'IFS ENS',
-    parts: [{ model: 'ecmwf_ifs025', days: 6, label: 'IFS ENS', note: '51 members, 0.25° grid' }],
+    parts: [{ model: 'ecmwf_ifs025', runId: 'ecmwf_ifs025_ensemble', days: 6, label: 'IFS ENS', note: '51 members, 0.25° grid' }],
   },
   icon_ch: {
     label: 'ICON-CH-EPS',
     parts: [
-      { model: 'meteoswiss_icon_ch1', days: 3, label: 'ICON-CH1-EPS', note: '11 members, 1 km' },
-      { model: 'meteoswiss_icon_ch2', days: 6, label: 'ICON-CH2-EPS', note: '21 members, 2 km' },
+      { model: 'meteoswiss_icon_ch1', runId: 'meteoswiss_icon_ch1_ensemble', days: 3, label: 'ICON-CH1-EPS', note: '11 members, 1 km' },
+      { model: 'meteoswiss_icon_ch2', runId: 'meteoswiss_icon_ch2_ensemble', days: 6, label: 'ICON-CH2-EPS', note: '21 members, 2 km' },
     ],
   },
 };
@@ -33,6 +35,7 @@ const MODELS = {
     openMeteoBase:  'https://api.open-meteo.com/v1/ecmwf',
     openMeteoModel: null,  // dedicated endpoint; no models= param needed
     openMeteoDays:  10,
+    runId:          'ecmwf_ifs',  // Open-Meteo data id, for the model run time
     creditHtml: '<a href="https://www.ecmwf.int/en/forecasts/datasets/open-data" target="_blank" rel="noopener">ECMWF IFS HRES</a> via <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a>',
   },
   icon_ch: {
@@ -818,10 +821,14 @@ async function fetchAndShowForecast(lat, lng) {
             `?lat_lon=${lat.toFixed(4)},${lng.toFixed(4)}&parameters=${m.params}`;
     }
 
-    const json = await fetchJSON(url);
+    const [json, runTime] = await Promise.all([
+      fetchJSON(url),
+      m.runId ? fetchRunTime(OPENMETEO_DATA_BASE, m.runId) : null,
+    ]);
     if (m.isOpenMeteo) {
       lastForecastData = processOpenMeteoTimeseries(json);
       lastForecastData.isEnsemble = false;
+      lastForecastData.refTime = runTime;
       setForecastLocationEl(lat, lng, lastForecastData, m.label);
       scroll.classList.remove('hidden');
       renderForecastTable(lastForecastData);
@@ -922,6 +929,30 @@ function offerEnsemble(lat, lng) {
   if (ensembleWanted) showEnsemble(lat, lng);
 }
 
+// ── Model run times (Open-Meteo) ─────────────────────────────────────────────
+
+const runTimeCache = new Map();  // `${base}/${id}` → { at, promise }
+
+/** Initialisation time of the latest run Open-Meteo holds for a model, or null if unavailable. */
+function fetchRunTime(dataBase, id) {
+  const key = `${dataBase}/${id}`;
+  const hit = runTimeCache.get(key);
+  if (hit && Date.now() - hit.at < 5 * 60e3) return hit.promise;
+  const promise = fetchJSON(`${dataBase}/${id}/static/meta.json`)
+    .then(m => (isFinite(m.last_run_initialisation_time) ? new Date(m.last_run_initialisation_time * 1000) : null))
+    .catch(() => null);
+  runTimeCache.set(key, { at: Date.now(), promise });
+  return promise;
+}
+
+/** Run line for a dataset: one run (`refTime`) or several stitched models (`runs`: [{ label, time }]). */
+function runTextFor(data) {
+  const runs = (data.runs || []).filter(r => r.time);
+  if (runs.length < 2) return modelRunText(runs.length ? runs[0].time : data.refTime);
+  const ago = t => Math.max(0, Math.round((Date.now() - t.getTime()) / 3.6e6));
+  return 'Model runs ' + runs.map(r => `${r.label} ${formatDateTime(r.time)} (${ago(r.time)} h ago)`).join(' · ');
+}
+
 // ── Member ensembles (IFS ENS, ICON-CH-EPS) ──────────────────────────────────
 
 /** Linear-interpolated percentile (p in 0–1) of an ascending-sorted array. */
@@ -956,10 +987,13 @@ const ENSEMBLE_VARS = { temp: 'temperature_2m', precip: 'precipitation', snow: '
 
 async function fetchMemberEnsemble(lat, lng, cfg) {
   const vars = Object.values(ENSEMBLE_VARS).join(',');
-  const jsons = await Promise.all(cfg.parts.map(part => fetchJSON(
-    `${OPENMETEO_ENSEMBLE_BASE}?latitude=${lat.toFixed(4)}&longitude=${lng.toFixed(4)}` +
-    `&hourly=${vars}&models=${part.model}&forecast_days=${part.days}&wind_speed_unit=ms&timezone=UTC`
-  )));
+  const [jsons, runTimes] = await Promise.all([
+    Promise.all(cfg.parts.map(part => fetchJSON(
+      `${OPENMETEO_ENSEMBLE_BASE}?latitude=${lat.toFixed(4)}&longitude=${lng.toFixed(4)}` +
+      `&hourly=${vars}&models=${part.model}&forecast_days=${part.days}&wind_speed_unit=ms&timezone=UTC`
+    ))),
+    Promise.all(cfg.parts.map(part => fetchRunTime(OPENMETEO_ENSEMBLE_DATA_BASE, part.runId))),
+  ]);
 
   // Percentiles per part, keyed by timestamp so the parts can be stitched
   const parts = jsons.map(json => {
@@ -976,6 +1010,7 @@ async function fetchMemberEnsemble(lat, lng, cfg) {
   const out = { isEnsemble: true, times: [], refTime: null, temp: empty(), precip: empty(), snow: empty(), wind: empty(), gust: empty(), cloud: empty() };
   let coveredUntil = startMs - 1;
   let transitionIndex = null;
+  const used = [];
   parts.forEach((part, pi) => {
     let lastValid = -1;
     part.times.forEach((t, i) => { if (part.stats.temp.p50[i] !== null) lastValid = i; });
@@ -984,6 +1019,7 @@ async function fetchMemberEnsemble(lat, lng, cfg) {
       const ms = part.times[i].getTime();
       if (ms <= coveredUntil || ms >= endMs) continue;
       out.times.push(part.times[i]);
+      if (!used.includes(pi)) used.push(pi);
       for (const name of Object.keys(ENSEMBLE_VARS)) {
         for (const q of ['p10', 'p50', 'p90']) out[name][q].push(part.stats[name][q][i]);
       }
@@ -1011,6 +1047,7 @@ async function fetchMemberEnsemble(lat, lng, cfg) {
   out.transitionLabel = out.transitionIndex !== null ? cfg.parts[1].label : null;
   out.label = `${cfg.label} ensemble`;
   out.membersText = cfg.parts.map(p => `${p.label}: ${p.note}`).join(' → ');
+  out.runs = used.map(pi => ({ label: cfg.parts[pi].label, time: runTimes[pi] }));
   out.fromMembers = true;
   return out;
 }
@@ -1018,6 +1055,18 @@ async function fetchMemberEnsemble(lat, lng, cfg) {
 // ── Fetch merged ICON-CH1 + CH2 ─────────────────────────────────────────────
 
 async function fetchMergedIconCH(lat, lng) {
+  const m = MODELS.icon_ch;
+  const [data, ch1Run, ch2Run] = await Promise.all([
+    fetchMergedIconCHData(lat, lng),
+    fetchRunTime(OPENMETEO_DATA_BASE, m.mergeModels[0].openMeteoModel),
+    fetchRunTime(OPENMETEO_DATA_BASE, m.mergeModels[1].openMeteoModel),
+  ]);
+  data.runs = [{ label: m.mergeModels[0].label, time: ch1Run }];
+  if (data.transitionIndex != null) data.runs.push({ label: m.mergeModels[1].label, time: ch2Run });
+  return data;
+}
+
+async function fetchMergedIconCHData(lat, lng) {
   const m = MODELS.icon_ch;
   const omParams = 'temperature_2m,precipitation,snowfall,wind_speed_10m,wind_direction_10m,wind_gusts_10m,cloud_cover';
 
@@ -1081,16 +1130,18 @@ async function fetchCompareData(lat, lng) {
   const results = [];
 
   // Fetch all in parallel (ICON-CH is itself a parallel fetch internally)
-  const [ifsJson, iconChData, claefJson] = await Promise.allSettled([
+  const [ifsJson, iconChData, claefJson, ifsRun] = await Promise.allSettled([
     fetchJSON(ifsUrl),
     fetchMergedIconCH(lat, lng),
     fetchJSON(claefUrl),
+    fetchRunTime(OPENMETEO_DATA_BASE, MODELS.ifs.runId),
   ]);
 
   // Process IFS
   if (ifsJson.status === 'fulfilled') {
     const data = processOpenMeteoTimeseries(ifsJson.value);
     data.isEnsemble = false;
+    data.refTime = ifsRun.status === 'fulfilled' ? ifsRun.value : null;
     results.push({ label: 'IFS HRES', data, hasCloudCover: true, gridLat: data.gridLat, gridLon: data.gridLon });
   } else {
     results.push({ label: 'IFS HRES', error: ifsJson.reason?.message || 'Failed to load' });
@@ -1192,7 +1243,7 @@ function renderCompareView(models) {
     } else {
       heading.textContent = entry.label;
     }
-    const run = entry.data ? modelRunText(entry.data.refTime) : '';
+    const run = entry.data ? runTextFor(entry.data) : '';
     if (run) heading.textContent += ` · ${run}`;
     section.appendChild(heading);
 
@@ -1407,7 +1458,7 @@ function buildTableFooter(data) {
   const wrap = document.createElement('div');
   wrap.className = 'fc-table-footer-inner';
 
-  const run = modelRunText(data.refTime);
+  const run = runTextFor(data);
   if (run) {
     const runEl = document.createElement('span');
     runEl.className = 'fc-run-info';
@@ -1778,7 +1829,7 @@ function renderEnsembleCharts(data) {
 
   const head = document.createElement('div');
   head.className = 'fc-ens-head';
-  const run = modelRunText(data.refTime);
+  const run = runTextFor(data);
   head.innerHTML =
     `<h3 class="fc-section-heading">${data.label}</h3>` +
     `<div class="fc-ens-legend">` +
