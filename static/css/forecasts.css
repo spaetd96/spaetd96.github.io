@@ -1250,3 +1250,4 @@ html, body {
   .fc-city-icon { display: none; }
   .fc-city-name { padding: 2px 4px; }
 }
+.fc-city-hidden { visibility: hidden; pointer-events: none; }

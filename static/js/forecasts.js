@@ -127,7 +127,7 @@ const MODELS = {
 // Tabs in the info box; each tab offers its models as chips
 const MODEL_GROUPS = {
   now:      ['stations', 'inca'],
-  forecast: ['ifs', 'icon_ch', 'claef', 'compare'],
+  forecast: ['claef', 'ifs', 'icon_ch', 'compare'],
   past:     ['spartacus', 'spartacus_m', 'snowgrid'],
 };
 const SELECTABLE_MODELS = Object.values(MODEL_GROUPS).flat();
@@ -257,6 +257,7 @@ function initMap() {
 
   map.on('click', onMapClick);
   map.on('moveend', writeHash);
+  map.on('zoomend', declutterCities);
   map.on('dragstart', () => setInfoOpen(false));
 }
 
@@ -2165,8 +2166,8 @@ const OVERVIEW_CITIES = [
   { name: 'Linz', lat: 48.31, lon: 14.29 },
   { name: 'Salzburg', lat: 47.80, lon: 13.04 },
   { name: 'Innsbruck', lat: 47.27, lon: 11.39 },
-  { name: 'Bregenz', lat: 47.50, lon: 9.75 },
   { name: 'Klagenfurt', lat: 46.62, lon: 14.31 },
+  { name: 'Bregenz', lat: 47.50, lon: 9.75 },
   { name: 'St. Pölten', lat: 48.20, lon: 15.63 },
   { name: 'Eisenstadt', lat: 47.85, lon: 16.52 },
   // Neighbouring countries
@@ -2183,7 +2184,26 @@ const OVERVIEW_CITIES = [
   { name: 'Bolzano', lat: 46.50, lon: 11.35 },
   { name: 'Venezia', lat: 45.44, lon: 12.32 },
   { name: 'Milano', lat: 45.46, lon: 9.19 },
+  { name: 'Trento', lat: 46.07, lon: 11.12 },
+  { name: 'Trieste', lat: 45.65, lon: 13.78 },
 ];
+
+// Labels are shown in list order; one that would overlap a shown label is hidden until zoomed in
+let cityMarkers = [];
+
+function declutterCities() {
+  const taken = [];
+  for (const m of cityMarkers) {
+    const el = m.getElement();
+    if (!el) continue;
+    const pt = map.latLngToContainerPoint(m.getLatLng());
+    const w = el.offsetWidth, h = el.offsetHeight, pad = 3;
+    const box = [pt.x - w / 2 - pad, pt.y - h / 2 - pad, pt.x + w / 2 + pad, pt.y + h / 2 + pad];
+    const clash = taken.some(b => box[0] < b[2] && box[2] > b[0] && box[1] < b[3] && box[3] > b[1]);
+    el.classList.toggle('fc-city-hidden', clash);
+    if (!clash) taken.push(box);
+  }
+}
 
 /** Fetch the C-LAEF forecast for all cities in one request and reduce it to one day. */
 async function loadCityOverview() {
@@ -2224,19 +2244,23 @@ async function showCityOverview() {
   }
   if (req !== cityReq || currentModel !== 'claef') return;
   cityLayer.clearLayers();
+  cityMarkers = [];
   for (const { city, tmax, tmin, icon } of cityOverview) {
     const html = `<span class="fc-city-icon">${icon}</span>` +
       `<span class="fc-city-name">${city.name}</span>` +
       `<span class="fc-city-temps"><b>${Math.round(tmax)}°</b><i>${Math.round(tmin)}°</i></span>`;
-    L.marker([city.lat, city.lon], {
+    const marker = L.marker([city.lat, city.lon], {
       icon: L.divIcon({ className: 'fc-city', html, iconSize: null }),
       keyboard: false,
     }).on('click', () => selectLocation(city.lat, city.lon, { label: city.name })).addTo(cityLayer);
+    cityMarkers.push(marker);
   }
+  declutterCities();
 }
 
 function hideCityOverview() {
   cityReq++;
+  cityMarkers = [];
   if (cityLayer) cityLayer.clearLayers();
 }
 
